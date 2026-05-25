@@ -27,6 +27,7 @@ Make the extension feel like a guided payroll review workflow, not a collection 
 - Pay-rule setup is repetitive and may allow accidental zero-value or unfinished agreements to blend in with valid rules.
 - Warnings are visible, but they need stronger triage: severity, category, next action, and reviewed state.
 - Results present many valuable numbers at once; users need a stronger hierarchy between payroll totals, reconciliation checks, and review exceptions.
+- The side panel is carrying too many jobs at once: setup form, import console, pay-rule editor, results dashboard, warning review, and export center. After results are calculated, the long scrollbar makes the workflow feel like a crowded widget instead of a focused payroll review surface.
 - The side-panel width makes wide tables and dense button rows harder to scan.
 - Help patterns rely partly on hover and punctuation-style help controls, which can be weak for keyboard, touch, and assistive technology users.
 
@@ -52,6 +53,24 @@ Make the extension feel like a guided payroll review workflow, not a collection 
 - Prevent quiet mistakes. Missing core data, zero pay values, legacy rules, and suspicious reconciliation gaps should be impossible to overlook.
 - Keep payroll data private by design. Reinforce local-only processing at moments when files are selected, saved, cleared, or exported.
 - Preserve side-panel ergonomics. Optimize for a narrow working surface before optimizing for desktop-wide layouts.
+- Treat the side panel as a workflow controller, not the only place every detail must live. Keep the current task in the panel and move deep review into drawers, tabs, accordions, or a separate report view.
+- Switch modes after calculation. Setup controls should collapse into a concise run summary once the user is reviewing results.
+
+## Side-Panel Density Strategy
+
+The biggest UX improvement is to reduce vertical sprawl after results are calculated. The app should not show the full setup workflow, every import control, every pay-rule editor, every metric, and the full clinician results table in one continuous scroll.
+
+Recommended structure:
+
+- Setup mode: pay period, import review, and pay-rule completion are expanded because the user is preparing the run.
+- Review mode: after Calculate, setup collapses into a compact run summary with Edit buttons for Pay Period, Imports, and Pay Rules.
+- Results overview: show only the critical totals, unresolved warning count, and export actions at the top of review mode.
+- Detail surfaces: put reconciliation details, clinician rows, ledgers, and warning lists behind tabs, accordions, drawers, or a full report page.
+- Persistent actions: keep Calculate during setup and Export/Print during review in a sticky action area, instead of repeating large action rows inside the scroll.
+- Progressive disclosure: default to collapsed completed sections, but make incomplete or risky sections expand automatically.
+- Escape hatch: offer "Open full report" in a new extension page for dense tables and deep reconciliation, while the side panel remains the compact command center.
+
+Success means the side panel feels like a guided control surface. Dense payroll evidence remains available, but it no longer competes with the user's immediate next action.
 
 ## Prioritized Roadmap
 
@@ -61,6 +80,7 @@ Scope: 1 to 2 days.
 
 - Disable Calculate until the minimum required inputs are present, or keep it enabled with a clear preflight dialog explaining blockers.
 - Add a compact "Next step" line to the current run banner.
+- After calculation, collapse Pay Period, Imports, and Clinician Pay Rules into a compact run summary with Edit buttons.
 - Show a persistent autosave status for imported files, dates, and pay rules.
 - Add validation badges to clinician pay-rule cards: Complete, Missing rate, Legacy rule, or Not configured.
 - Warn when a configured pay rule has all-zero rates or a zero collection percentage.
@@ -103,16 +123,20 @@ Scope: 1 week.
 - Make reconciliation gaps actionable by showing expected cause, available source data, and recommended next step.
 - Add empty success states, such as "No warning-level issues found for this run."
 
-### Phase 5: Results Information Architecture
+### Phase 5: Results And Workspace Information Architecture
 
-Scope: 1 week.
+Scope: 1 to 2 weeks.
 
 - Split results into clear sections: Payroll totals, Reconciliation, Exceptions, Clinicians, and Exports.
 - Put the most decision-critical numbers first: gross income, clinician compensation, contribution result, unresolved warnings, and reconciliation gap.
+- Introduce setup and review modes so the side panel does not keep the full setup form expanded after calculation.
+- Collapse completed setup sections after calculation and show a one-screen run summary: period, matched imports, clinician rule completion, warning count, and result status.
 - Add a clinician detail drawer or expandable row for session mix, trailing payments, split payments, unmatched payments, and open appointments.
 - Turn dense review counts into clickable chips with labels and counts.
 - Add sticky result actions after calculation so Print All and downloads remain reachable without scrolling back to the heading.
-- On narrow side-panel widths, consider replacing the wide results table with stacked clinician rows or a compact card list.
+- Replace the wide clinician results table in the side panel with compact clinician rows or cards. Move the dense table to a full report view, export preview, or detail drawer.
+- Add a tabbed review area for Summary, Warnings, Clinicians, Reconciliation, and Exports if accordions still produce too much vertical scroll.
+- Add an "Open full report" action for spreadsheet-like review, where wide tables and ledgers can breathe outside the side panel.
 
 ### Phase 6: Export And Statement Polish
 
@@ -167,6 +191,7 @@ Build a "guided run" MVP:
 - Calculate has preflight validation.
 - Import checklist explains match reason and missing status.
 - Pay-rule cards show completion badges and zero-value warnings.
+- After calculation, setup collapses into a run summary and the side panel switches to review mode.
 - Warning drawer has severity filters and reviewed state.
 - Results actions warn before export when blockers remain.
 
@@ -181,4 +206,6 @@ This milestone improves trust without changing the payroll calculation model.
 - Export actions clearly state what will be produced before files are generated.
 - The warning drawer and help popovers are keyboard accessible.
 - The side panel remains usable at narrow widths without horizontal scrolling for the primary workflow.
+- After calculation, the user can see the run summary, critical totals, warning status, and primary export actions without scrolling through the full setup form.
+- Dense clinician and reconciliation details are available on demand, but they do not create one long default scrollbar.
 - Local-only processing and saved local draft behavior are explained in the workflow where trust questions arise.
