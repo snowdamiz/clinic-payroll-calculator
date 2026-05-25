@@ -10,7 +10,7 @@ const distDir = path.join(rootDir, "dist", "chrome-store");
 const stageDir = path.join(distDir, "stage");
 const zipName = `${packageJson.name}-${manifest.version}.zip`;
 const zipPath = path.join(distDir, zipName);
-const packageFiles = ["manifest.json", "popup.html", "src", "icons"];
+const packageFiles = ["manifest.json", "sidepanel.html", "src", "icons"];
 const dependencyFiles = ["node_modules/@e965/xlsx/xlsx.mjs"];
 
 await rm(stageDir, { recursive: true, force: true });

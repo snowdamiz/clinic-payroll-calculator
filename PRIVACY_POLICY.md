@@ -18,7 +18,7 @@ The extension does not transmit data to any external server. It does not use ana
 
 ## Permissions
 
-The `storage` permission is used to save local pay rules and draft imports between popup sessions. The `unlimitedStorage` permission is used so larger CSV or Excel exports can be stored locally without Chrome's default extension storage quota interrupting payroll work.
+The `storage` permission is used to save local pay rules and draft imports between side panel sessions. The `unlimitedStorage` permission is used so larger CSV or Excel exports can be stored locally without Chrome's default extension storage quota interrupting payroll work. The `sidePanel` permission is used to show the calculator in Chrome's persistent browser side panel.
 
 ## Contact
 

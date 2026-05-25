@@ -6,12 +6,13 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const requiredIconSizes = ["16", "32", "48", "128"];
 const textFiles = [
   "manifest.json",
-  "popup.html",
+  "sidepanel.html",
+  "src/background.js",
   "src/importFileReader.js",
   "src/importInference.js",
   "src/payroll.js",
-  "src/popup.css",
-  "src/popup.js",
+  "src/sidepanel.css",
+  "src/sidepanel.js",
   "src/print-page.js",
 ];
 
@@ -48,8 +49,20 @@ function validateManifest(manifestJson) {
     errors.push("manifest.description is required and must be 132 characters or fewer.");
   }
 
-  if (!manifestJson.action?.default_popup) {
-    errors.push("manifest.action.default_popup is required for this popup extension.");
+  if (manifestJson.action?.default_popup) {
+    errors.push("manifest.action.default_popup should not be set for the side panel extension.");
+  }
+
+  if (manifestJson.side_panel?.default_path !== "sidepanel.html") {
+    errors.push("manifest.side_panel.default_path must point to sidepanel.html.");
+  }
+
+  if (manifestJson.background?.service_worker !== "src/background.js") {
+    errors.push("manifest.background.service_worker must point to src/background.js.");
+  }
+
+  if (!manifestJson.permissions?.includes("sidePanel")) {
+    errors.push("manifest.permissions must include sidePanel.");
   }
 
   for (const size of requiredIconSizes) {
@@ -67,9 +80,8 @@ function validateManifest(manifestJson) {
 }
 
 async function validateFiles(manifestJson) {
-  if (manifestJson.action?.default_popup) {
-    await assertFile(manifestJson.action.default_popup, "popup HTML");
-  }
+  await assertFile(manifestJson.side_panel?.default_path, "side panel HTML");
+  await assertFile(manifestJson.background?.service_worker, "background service worker");
 
   const iconEntries = [
     ...Object.entries(manifestJson.icons || {}),
@@ -91,9 +103,9 @@ async function validateTextFiles() {
     }
   }
 
-  const popupHtml = await readText("popup.html");
-  if (!/<script type="module" src="src\/popup\.js"><\/script>/.test(popupHtml)) {
-    errors.push("popup.html should load src/popup.js as an external module script.");
+  const sidePanelHtml = await readText("sidepanel.html");
+  if (!/<script type="module" src="src\/sidepanel\.js"><\/script>/.test(sidePanelHtml)) {
+    errors.push("sidepanel.html should load src/sidepanel.js as an external module script.");
   }
 }
 

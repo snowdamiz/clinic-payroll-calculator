@@ -54,7 +54,8 @@ const importRoles = [
 ];
 
 const CONTRACTS_STORAGE_KEY = "clinicianContracts";
-const DRAFT_STORAGE_KEY = "payrollWidgetDraft";
+const DRAFT_STORAGE_KEY = "payrollSidePanelDraft";
+const LEGACY_DRAFT_STORAGE_KEY = "payrollWidgetDraft";
 const DEFAULT_IMPORT_STATUS = "Choose Folder to infer the SimplePractice CSV or Excel exports automatically.";
 const DRAFT_SAVE_DELAY_MS = 250;
 
@@ -154,7 +155,7 @@ function bindEvents() {
     try {
       collectContractsFromDom();
     } catch {
-      // Draft saves are best-effort during popup teardown.
+      // Draft saves are best-effort during side panel teardown.
     }
     persistDraft().catch(() => {});
   });
@@ -302,8 +303,11 @@ async function resetWidget() {
   elements.resultsPanel.classList.add("hidden");
   renderContracts([]);
   renderGuidance();
-  await storageRemove(DRAFT_STORAGE_KEY);
-  setActionStatus("Widget reset.");
+  await Promise.all([
+    storageRemove(DRAFT_STORAGE_KEY),
+    storageRemove(LEGACY_DRAFT_STORAGE_KEY),
+  ]);
+  setActionStatus("Side panel reset.");
 }
 
 function rebuildFromState({ showResults = false } = {}) {
@@ -977,35 +981,40 @@ function showInlineError(error) {
 }
 
 async function restoreSavedState(defaultPeriodValue) {
-  const [savedContracts, draft] = await Promise.all([
+  const [savedContracts, draft, legacyDraft] = await Promise.all([
     storageGet(CONTRACTS_STORAGE_KEY, {}),
     storageGet(DRAFT_STORAGE_KEY, null),
+    storageGet(LEGACY_DRAFT_STORAGE_KEY, null),
   ]);
+  const restoredDraft = draft || legacyDraft;
 
   state.contracts = savedContracts || {};
   elements.periodStart.value = defaultPeriodValue.start;
   elements.periodEnd.value = defaultPeriodValue.end;
   elements.folderImportStatus.textContent = DEFAULT_IMPORT_STATUS;
 
-  if (!draft || draft.version !== 1) {
+  if (!restoredDraft || restoredDraft.version !== 1) {
     renderContracts([]);
     return;
   }
 
-  state.files = sanitizeStoredFiles(draft.files);
+  state.files = sanitizeStoredFiles(restoredDraft.files);
   state.contracts = {
     ...state.contracts,
-    ...(draft.contracts || {}),
+    ...(restoredDraft.contracts || {}),
   };
-  elements.periodStart.value = draft.periodStart || defaultPeriodValue.start;
-  elements.periodEnd.value = draft.periodEnd || defaultPeriodValue.end;
-  elements.folderImportStatus.textContent = draft.folderImportStatus || restoredImportStatus();
+  elements.periodStart.value = restoredDraft.periodStart || defaultPeriodValue.start;
+  elements.periodEnd.value = restoredDraft.periodEnd || defaultPeriodValue.end;
+  elements.folderImportStatus.textContent = restoredDraft.folderImportStatus || restoredImportStatus();
 
   clearFileInputLabels();
   renderManualFileLabels(state.files);
 
   if (hasImportFiles()) {
-    rebuildFromState({ showResults: Boolean(draft.resultsVisible) });
+    rebuildFromState({ showResults: Boolean(restoredDraft.resultsVisible) });
+    if (!draft && legacyDraft) {
+      await persistDraft();
+    }
     setActionStatus(`Restored ${importFileCount()} import${importFileCount() === 1 ? "" : "s"}.`, "success");
     return;
   }
@@ -1073,7 +1082,7 @@ function importFileCount() {
 function restoredImportStatus() {
   const count = importFileCount();
   return count
-    ? `Restored ${count} SimplePractice export${count === 1 ? "" : "s"} from the last popup session.`
+    ? `Restored ${count} SimplePractice export${count === 1 ? "" : "s"} from the last side panel session.`
     : DEFAULT_IMPORT_STATUS;
 }
 

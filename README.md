@@ -1,6 +1,6 @@
 # Clinic Payroll Calculator
 
-Chrome extension for calculating clinic income and clinician pay statements from SimplePractice CSV or Excel exports.
+Chrome side-panel extension for calculating clinic income and clinician pay statements from SimplePractice CSV or Excel exports.
 
 ## Load The Extension
 
@@ -22,16 +22,17 @@ The ZIP contains only the extension runtime files and the packaged Excel parser 
 
 ## Use Each Pay Period
 
-1. Set the pay period dates, usually the 25th through the 24th.
-2. Import the SimplePractice income allocation CSV, XLSX, or XLS export.
-3. Import the appointment status CSV, XLSX, or XLS export for per-session clinicians.
-4. Optionally import card transactions, payment export, and insurance payment reports for reconciliation.
-5. Choose each clinician's pay rule:
+1. Click the Clinic Payroll extension icon to open the persistent browser side panel.
+2. Set the pay period dates, usually the 25th through the 24th.
+3. Import the SimplePractice income allocation CSV, XLSX, or XLS export.
+4. Import the appointment status CSV, XLSX, or XLS export for per-session clinicians.
+5. Optionally import card transactions, payment export, and insurance payment reports for reconciliation.
+6. Choose each clinician's pay rule:
    - Flat rate per kept session
    - Different rates by session type
    - Percent of that clinician's collections
    - Percent of total clinic income
-6. Click Calculate.
-7. Use Statement for one clinician or Print All for the full pay-period packet.
+7. Click Calculate.
+8. Use Statement for one clinician or Print All for the full pay-period packet.
 
 The extension calculates clinic income from actual payments received in the pay-period income allocation export. Appointment dates are used for session-count pay rules, while delayed insurance payments are still counted in the period when they were received.

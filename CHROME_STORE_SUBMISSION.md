@@ -14,7 +14,7 @@ Upload:
 dist/chrome-store/clinic-payroll-calculator-0.1.0.zip
 ```
 
-The package contains `manifest.json`, `popup.html`, `src/`, `icons/`, and the packaged Excel parser dependency only. `manifest.json` is at the ZIP root.
+The package contains `manifest.json`, `sidepanel.html`, `src/`, `icons/`, and the packaged Excel parser dependency only. `manifest.json` is at the ZIP root.
 
 ## Store Listing
 
@@ -59,13 +59,19 @@ Calculate clinic income and clinician pay statements from user-selected SimplePr
 `storage`:
 
 ```text
-Used to save clinician pay rules and the current local draft so the popup can restore payroll work between sessions.
+Used to save clinician pay rules and the current local draft so the side panel can restore payroll work between sessions.
 ```
 
 `unlimitedStorage`:
 
 ```text
 Used to keep larger user-selected SimplePractice CSV or Excel exports in local Chrome extension storage without interrupting payroll workflows due to the default storage quota.
+```
+
+`sidePanel`:
+
+```text
+Used to display the payroll calculator in Chrome's persistent browser side panel so file picker interactions do not close the extension UI.
 ```
 
 ## Privacy Practices
@@ -87,7 +93,7 @@ https://gist.github.com/snowdamiz/9e743678f0067be10ed3f05cc21c4867
 ## Test Instructions
 
 ```text
-1. Open the extension popup.
+1. Open the extension side panel by clicking the Clinic Payroll extension icon.
 2. Select a pay period.
 3. Import SimplePractice CSV or Excel exports using Import folder or the individual file controls.
 4. Configure a clinician pay rule.
@@ -100,5 +106,5 @@ No login or external account is required.
 ## Assets Checklist
 
 - Extension icons are included in `icons/` at 16, 32, 48, and 128 px.
-- Add Chrome Web Store screenshots from a loaded extension popup before final submission.
+- Add Chrome Web Store screenshots from a loaded extension side panel before final submission.
 - Add a public privacy policy URL before final submission.
