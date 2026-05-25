@@ -36,6 +36,14 @@ const ROLE_SPECS = [
   },
 ];
 
+const DEFAULT_CANDIDATE_OPTIONS = {
+  maxFiles: 25,
+  maxBytes: 50 * 1024 * 1024,
+  maxFileBytes: 20 * 1024 * 1024,
+  maxNameMatchesPerRole: 4,
+  maxFallbackFiles: 8,
+};
+
 export function inferImportFiles(files) {
   const assignments = {};
   const unmatched = [];
@@ -76,15 +84,113 @@ export function importRoleSpecs() {
   return ROLE_SPECS.map((role) => ({ ...role }));
 }
 
+export function prioritizeImportCandidates(files, options = {}) {
+  const settings = {
+    ...DEFAULT_CANDIDATE_OPTIONS,
+    ...options,
+  };
+  const entries = files.map((file, index) => ({
+    file,
+    index,
+    size: Number(file?.size || 0),
+    roleScores: ROLE_SPECS.map((role) => ({
+      role,
+      score: scoreFileName(file, role),
+    })).filter(({ score }) => score > 0),
+  }));
+  const selected = new Map();
+  const oversized = new Set();
+  let selectedBytes = 0;
+
+  function trySelect(entry) {
+    if (selected.has(entry.index)) return false;
+    if (settings.maxFiles && selected.size >= settings.maxFiles) return false;
+    if (settings.maxFileBytes && entry.size > settings.maxFileBytes) {
+      oversized.add(entry.index);
+      return false;
+    }
+    if (settings.maxBytes && entry.size && selectedBytes + entry.size > settings.maxBytes) return false;
+
+    selected.set(entry.index, entry);
+    selectedBytes += entry.size;
+    return true;
+  }
+
+  for (const role of ROLE_SPECS) {
+    let selectedForRole = 0;
+    const roleEntries = entries
+      .filter((entry) => entry.roleScores.some((roleScore) => roleScore.role.inputId === role.inputId))
+      .sort((a, b) => compareCandidatesForRole(a, b, role));
+    for (const entry of roleEntries) {
+      if (selectedForRole >= settings.maxNameMatchesPerRole) break;
+      if (trySelect(entry)) selectedForRole += 1;
+    }
+  }
+
+  entries
+    .filter((entry) => entry.roleScores.length === 0)
+    .sort(compareFallbackCandidates)
+    .slice(0, settings.maxFallbackFiles)
+    .forEach(trySelect);
+
+  const candidates = [...selected.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => entry.file);
+  const skipped = entries
+    .filter((entry) => !selected.has(entry.index) && !oversized.has(entry.index))
+    .map((entry) => entry.file);
+
+  return {
+    candidates,
+    skipped,
+    oversized: [...oversized].map((index) => files[index]),
+    supportedCount: files.length,
+    selectedBytes,
+  };
+}
+
 function scoreFile(file, role) {
   const name = clean(file.name).toLowerCase();
   const headers = firstCsvHeaders(file.text);
   const headerSet = new Set(headers.map((header) => header.toLowerCase()));
   const headerScore = role.requiredHeaders.filter((header) => headerSet.has(header.toLowerCase())).length;
-  const nameScore = role.fileHints.some((hint) => name.includes(hint)) ? 2 : 0;
+  const nameScore = scoreFileName({ name }, role);
 
   if (headerScore >= Math.min(3, role.requiredHeaders.length)) return headerScore * 10 + nameScore;
   return nameScore;
+}
+
+function scoreFileName(file, role) {
+  const name = clean(file?.name).toLowerCase();
+  return role.fileHints.some((hint) => name.includes(hint)) ? 2 : 0;
+}
+
+function compareCandidatesForRole(a, b, role) {
+  const roleScoreDifference = roleScore(b, role) - roleScore(a, role);
+  if (roleScoreDifference) return roleScoreDifference;
+  return compareNewestThenSmallest(a, b);
+}
+
+function compareFallbackCandidates(a, b) {
+  const csvDifference = isCsvLike(b.file) - isCsvLike(a.file);
+  if (csvDifference) return csvDifference;
+  return compareNewestThenSmallest(a, b);
+}
+
+function compareNewestThenSmallest(a, b) {
+  const newestDifference = Number(b.file?.lastModified || 0) - Number(a.file?.lastModified || 0);
+  if (newestDifference) return newestDifference;
+  const sizeDifference = a.size - b.size;
+  if (sizeDifference) return sizeDifference;
+  return a.index - b.index;
+}
+
+function roleScore(entry, role) {
+  return entry.roleScores.find((roleScoreEntry) => roleScoreEntry.role.inputId === role.inputId)?.score || 0;
+}
+
+function isCsvLike(file) {
+  return /\.csv$/i.test(String(file?.name || ""));
 }
 
 function firstCsvHeaders(text) {

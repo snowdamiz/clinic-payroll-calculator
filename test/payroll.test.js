@@ -1,12 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPayrollReport, generateClinicianCsv, generateClinicianDocument } from "../src/payroll.js";
+import {
+  buildPayrollReport,
+  generateClinicianCsv,
+  generateClinicianDocument,
+  inferPayPeriodFromIncomeCsv,
+} from "../src/payroll.js";
 
 const incomeCsv = `Clinician,ClinicianId,Source,Description,Date Paid,Invoice or Claim #,Invoice or Claim URL,Appointment,Details,Client,Insurance Payment Type,Insurance Check/Wire Number,Amount Paid
 Scott LaForce,1715392,Insurance Payment,CIGNA Health Plan,04/25/2026,Claim #270925712,url,04/21/2026,90837,Ryan Henin,ACH,260423090057625,45.00
 Scott LaForce,1715392,Client payment,Appointment,04/26/2026,INV #20941,url,04/21/2026,90837,Ryan Henin,,,25.00
 Ben Poling,1646815,Insurance Payment,United HealthCare,04/27/2026,,,04/13/2026,90853,Matt Mohr,CHK,1245339622,9.44`;
+
+test("infers the 25th-through-24th pay period from income export dates", () => {
+  assert.deepEqual(inferPayPeriodFromIncomeCsv(incomeCsv), {
+    start: "2026-04-25",
+    end: "2026-05-24",
+  });
+  assert.deepEqual(
+    inferPayPeriodFromIncomeCsv("Clinician,Date Paid,Amount Paid\nScott,05/25/2026,10\n"),
+    {
+      start: "2026-05-25",
+      end: "2026-06-24",
+    },
+  );
+  assert.equal(inferPayPeriodFromIncomeCsv("Clinician,Date Paid,Amount Paid\nScott,,10\n"), null);
+});
 
 test("totals cash-basis clinic income by source and clinician from the pay-period report", () => {
   const report = buildPayrollReport({

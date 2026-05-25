@@ -70,6 +70,18 @@ button:active:not(:disabled) {
   padding: 12px;
 }
 
+.importer-page {
+  min-width: 0;
+}
+
+.importer-shell {
+  display: grid;
+  gap: 12px;
+  width: min(760px, calc(100vw - 24px));
+  margin: 0 auto;
+  padding: 12px;
+}
+
 .section-heading,
 .period-panel,
 .button-row {
@@ -308,7 +320,7 @@ button:active:not(:disabled) {
 .readiness-banner > div,
 .workflow-step > div,
 .file-control,
-.folder-control,
+.bulk-import-zone,
 .folder-title > span,
 .file-control-title > span,
 .file-picker-row > small,
@@ -493,12 +505,24 @@ select:focus {
   margin-top: 10px;
 }
 
-.folder-control {
+.bulk-import-zone {
   position: relative;
   margin-top: 10px;
   border: 1px solid rgba(31, 122, 90, 0.38);
   background: #f1f8f5;
   padding: 10px;
+}
+
+.bulk-import-zone[data-dragging="true"] {
+  border-color: var(--green);
+  background: #e8f5ef;
+  box-shadow: inset 0 0 0 2px rgba(31, 122, 90, 0.14);
+}
+
+.importer-panel[data-dragging="true"] {
+  border-color: var(--green);
+  background: #f1fbf6;
+  box-shadow: inset 0 0 0 2px rgba(31, 122, 90, 0.14);
 }
 
 .folder-title,
@@ -556,6 +580,24 @@ td {
   margin-top: 7px;
 }
 
+.bulk-import-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.bulk-file-control {
+  position: relative;
+  display: block;
+}
+
+.folder-picker-control {
+  position: relative;
+  display: block;
+  margin-top: 12px;
+}
+
 .file-action {
   display: inline-flex;
   align-items: center;
@@ -570,6 +612,15 @@ td {
   font-size: 12px;
   font-weight: 820;
   white-space: nowrap;
+}
+
+button.file-action {
+  width: 100%;
+}
+
+.bulk-file-control .file-action,
+.folder-picker-control .file-action {
+  width: 100%;
 }
 
 .import-status,
@@ -672,7 +723,8 @@ td {
 }
 
 .file-control input,
-.folder-control input {
+.bulk-file-control input,
+.folder-picker-control input {
   min-height: 0;
   padding: 0;
   border: 0;
@@ -681,7 +733,8 @@ td {
 }
 
 .file-control input[type="file"],
-.folder-control input[type="file"] {
+.bulk-file-control input[type="file"],
+.folder-picker-control input[type="file"] {
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -692,7 +745,8 @@ td {
 }
 
 .file-control:focus-within .file-action,
-.folder-control:focus-within .file-action {
+.bulk-file-control:focus-within .file-action,
+.folder-picker-control:focus-within .file-action {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(31, 122, 90, 0.16);
 }

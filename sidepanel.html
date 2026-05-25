@@ -68,18 +68,21 @@
           </div>
           <button id="clearFilesButton" class="ghost-button" type="button">Clear</button>
         </div>
-        <label class="folder-control">
+        <div id="bulkImportDropzone" class="bulk-import-zone">
           <span class="folder-title">
-            <span>Import folder</span>
+            <span>Bulk import</span>
             <small>Fastest</small>
           </span>
-          <input id="folderInput" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" webkitdirectory directory multiple>
-          <span class="file-picker-row">
-            <span class="file-action">Choose folder</span>
-            <small>Auto-detect matching CSV or Excel exports</small>
-          </span>
-        </label>
-        <p id="folderImportStatus" class="import-status">Choose Folder to infer the SimplePractice exports automatically.</p>
+          <div class="bulk-import-actions">
+            <button id="openImporterButton" class="file-action" type="button">Open folder importer</button>
+            <label class="bulk-file-control">
+              <input id="bulkFilesInput" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple>
+              <span class="file-action">Choose export files</span>
+            </label>
+          </div>
+          <p class="file-hint">Drop a folder or exported files here.</p>
+        </div>
+        <p id="folderImportStatus" class="import-status">Drop a folder here, open the folder importer, or choose the export files.</p>
         <div id="importChecklist" class="import-checklist" aria-label="Import checklist"></div>
         <div class="file-grid">
           <label class="file-control required" data-file-control="incomeFile">

@@ -321,6 +321,27 @@ export function parseCsv(csvText) {
     });
 }
 
+export function inferPayPeriodFromIncomeCsv(incomeCsv) {
+  const paidDates = parseCsv(incomeCsv)
+    .map((row) => parseDate(row["Date Paid"]))
+    .filter(Boolean)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  if (paidDates.length === 0) return null;
+
+  const firstDate = paidDates[0];
+  const year = firstDate.getFullYear();
+  const month = firstDate.getMonth();
+  const day = firstDate.getDate();
+  const startDate = day >= 25 ? new Date(year, month, 25) : new Date(year, month - 1, 25);
+  const endDate = day >= 25 ? new Date(year, month + 1, 24) : new Date(year, month, 24);
+
+  return {
+    start: dateInputValue(startDate),
+    end: dateInputValue(endDate),
+  };
+}
+
 export function classifySessionType(code) {
   const normalized = clean(code).match(/\d{5}/)?.[0] || "";
 
@@ -645,6 +666,13 @@ function parseDate(value) {
 
   const date = new Date(text);
   return Number.isNaN(date.valueOf()) ? null : date;
+}
+
+function dateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function moneyToCents(value) {

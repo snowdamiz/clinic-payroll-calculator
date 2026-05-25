@@ -3,9 +3,11 @@ import {
   formatMoney,
   generateClinicianCsv,
   generateClinicianDocument,
+  inferPayPeriodFromIncomeCsv,
 } from "./payroll.js";
 import { isSupportedImportFile, readImportFile } from "./importFileReader.js";
-import { inferImportFiles } from "./importInference.js";
+import { buildSimplePracticeImport, storedFilesFromAssignments } from "./bulkImport.js";
+import { filesFromDataTransfer } from "./dropFiles.js";
 
 const fileKeys = {
   incomeFile: "incomeCsv",
@@ -56,7 +58,7 @@ const importRoles = [
 const CONTRACTS_STORAGE_KEY = "clinicianContracts";
 const DRAFT_STORAGE_KEY = "payrollSidePanelDraft";
 const LEGACY_DRAFT_STORAGE_KEY = "payrollWidgetDraft";
-const DEFAULT_IMPORT_STATUS = "Choose Folder to infer the SimplePractice CSV or Excel exports automatically.";
+const DEFAULT_IMPORT_STATUS = "Drop a folder here, open the folder importer, or choose the export files.";
 const DRAFT_SAVE_DELAY_MS = 250;
 
 const sessionTypeLabels = [
@@ -77,6 +79,7 @@ const state = {
 };
 
 let draftSaveTimer = null;
+let lastAppliedImporterDraft = "";
 
 const elements = {
   periodStart: document.querySelector("#periodStart"),
@@ -93,7 +96,9 @@ const elements = {
   workflowSteps: document.querySelector("#workflowSteps"),
   saveRulesButton: document.querySelector("#saveRulesButton"),
   clearFilesButton: document.querySelector("#clearFilesButton"),
-  folderInput: document.querySelector("#folderInput"),
+  bulkImportDropzone: document.querySelector("#bulkImportDropzone"),
+  openImporterButton: document.querySelector("#openImporterButton"),
+  bulkFilesInput: document.querySelector("#bulkFilesInput"),
   folderImportStatus: document.querySelector("#folderImportStatus"),
   importChecklist: document.querySelector("#importChecklist"),
   printAllButton: document.querySelector("#printAllButton"),
@@ -143,7 +148,12 @@ function bindEvents() {
   elements.resetButton.addEventListener("click", resetWidget);
   elements.saveRulesButton.addEventListener("click", saveRules);
   elements.clearFilesButton.addEventListener("click", clearFiles);
-  elements.folderInput.addEventListener("change", handleFolderChange);
+  elements.openImporterButton.addEventListener("click", openFolderImporter);
+  elements.bulkFilesInput.addEventListener("change", handleBulkFilesChange);
+  elements.bulkImportDropzone.addEventListener("dragenter", handleBulkDragEnter);
+  elements.bulkImportDropzone.addEventListener("dragover", handleBulkDragOver);
+  elements.bulkImportDropzone.addEventListener("dragleave", handleBulkDragLeave);
+  elements.bulkImportDropzone.addEventListener("drop", handleBulkDrop);
   elements.printAllButton.addEventListener("click", printAllStatements);
   elements.downloadClinicianCsvsButton.addEventListener("click", downloadClinicianCsvs);
   elements.downloadSummaryButton.addEventListener("click", downloadSummaryCsv);
@@ -159,38 +169,80 @@ function bindEvents() {
     }
     persistDraft().catch(() => {});
   });
+  if (globalThis.chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener(handleExternalStorageChange);
+  }
 }
 
-async function handleFolderChange(event) {
-  const importFiles = [...(event.target.files || [])].filter(isSupportedImportFile);
+function openFolderImporter() {
+  const importerUrl = extensionAssetUrl("importer.html");
+  window.open(importerUrl, "_blank", "noopener");
+}
 
-  if (importFiles.length === 0) {
-    elements.folderImportStatus.textContent = "No CSV or Excel files found in that folder.";
-    return;
-  }
+async function handleBulkFilesChange(event) {
+  await importSelectedFiles([...(event.target.files || [])], {
+    emptyMessage: "No CSV or Excel files were selected.",
+  });
+}
 
+function handleBulkDragEnter(event) {
+  event.preventDefault();
+  elements.bulkImportDropzone.dataset.dragging = "true";
+}
+
+function handleBulkDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  elements.bulkImportDropzone.dataset.dragging = "true";
+}
+
+function handleBulkDragLeave(event) {
+  if (event.currentTarget.contains(event.relatedTarget)) return;
+  delete elements.bulkImportDropzone.dataset.dragging;
+}
+
+async function handleBulkDrop(event) {
+  event.preventDefault();
+  delete elements.bulkImportDropzone.dataset.dragging;
+
+  const files = await filesFromDataTransfer(event.dataTransfer);
+  await importSelectedFiles(files, {
+    emptyMessage: "No CSV or Excel files were found in that drop.",
+  });
+}
+
+async function importSelectedFiles(files, { emptyMessage }) {
   setControlsBusy(true);
-  setActionStatus("Importing files...");
+  setActionStatus("Scanning import files...");
   try {
-    const fileRecords = await Promise.all(importFiles.map(readImportFile));
-    const result = inferImportFiles(fileRecords);
+    const { supportedFiles, importPlan, readErrors, result } = await buildSimplePracticeImport(files, {
+      onProgress: ({ index, total, file }) => {
+        setActionStatus(`Scanning ${index + 1}/${total}: ${file.name}`);
+      },
+    });
 
-    state.files = {};
-    clearFileInputLabels();
-    for (const [inputId, file] of Object.entries(result.assignments)) {
-      state.files[inputId] = {
-        name: file.name,
-        text: file.text,
-      };
+    if (supportedFiles.length === 0) {
+      elements.folderImportStatus.textContent = emptyMessage;
+      return;
     }
 
+    if (!importPlan?.candidates.length) {
+      elements.folderImportStatus.textContent =
+        `No importable SimplePractice candidates found in ${supportedFiles.length} supported file${supportedFiles.length === 1 ? "" : "s"}.`;
+      return;
+    }
+
+    state.files = storedFilesFromAssignments(result.assignments);
+    clearFileInputLabels();
+
+    const periodWasInferred = maybeApplyInferredPayPeriod(result.assignments);
     renderManualFileLabels(result.assignments);
-    elements.folderImportStatus.textContent = folderStatusText(result);
+    elements.folderImportStatus.textContent = folderStatusText(result, importPlan, readErrors, { periodWasInferred });
     await refreshCliniciansFromImports();
     await persistDraft();
     setActionStatus(`Imported ${Object.keys(result.assignments).length} export${Object.keys(result.assignments).length === 1 ? "" : "s"}.`, "success");
   } catch (error) {
-    elements.folderImportStatus.textContent = `Could not import folder: ${errorMessage(error)}`;
+    elements.folderImportStatus.textContent = `Could not import files: ${errorMessage(error)}`;
     setActionStatus("Import failed.", "error");
   } finally {
     setControlsBusy(false);
@@ -272,7 +324,7 @@ async function saveRules() {
 async function clearFiles() {
   state.files = {};
   state.clinicianNames = [];
-  elements.folderInput.value = "";
+  elements.bulkFilesInput.value = "";
   elements.folderImportStatus.textContent = DEFAULT_IMPORT_STATUS;
   clearFileInputLabels();
   state.report = null;
@@ -297,7 +349,7 @@ async function resetWidget() {
   state.resultsVisible = false;
   elements.periodStart.value = period.start;
   elements.periodEnd.value = period.end;
-  elements.folderInput.value = "";
+  elements.bulkFilesInput.value = "";
   elements.folderImportStatus.textContent = DEFAULT_IMPORT_STATUS;
   clearFileInputLabels();
   elements.resultsPanel.classList.add("hidden");
@@ -344,17 +396,43 @@ function renderManualFileLabels(assignments) {
   }
 }
 
-function folderStatusText(result) {
+function folderStatusText(result, importPlan = null, readErrors = [], scanSummary = {}) {
   const matchedCount = Object.keys(result.assignments).length;
   const missingLabels = result.missing.map((role) => role.label);
   const unmatchedCount = result.unmatched.length;
   const parts = [`Matched ${matchedCount} export${matchedCount === 1 ? "" : "s"}.`];
   if (missingLabels.length) parts.push(`Missing: ${missingLabels.join(", ")}.`);
   if (unmatchedCount) parts.push(`${unmatchedCount} file${unmatchedCount === 1 ? "" : "s"} not recognized.`);
+  if (readErrors.length) parts.push(`${readErrors.length} file${readErrors.length === 1 ? "" : "s"} could not be read.`);
+  if (importPlan?.skipped?.length) parts.push(`Skipped ${importPlan.skipped.length} lower-priority file${importPlan.skipped.length === 1 ? "" : "s"} to keep the browser responsive.`);
+  if (importPlan?.oversized?.length) parts.push(`Skipped ${importPlan.oversized.length} oversized file${importPlan.oversized.length === 1 ? "" : "s"}.`);
+  if (scanSummary.periodWasInferred) parts.push(`Set pay period to ${elements.periodStart.value} through ${elements.periodEnd.value} from the income export.`);
   return parts.join(" ");
 }
 
+function maybeApplyInferredPayPeriod(assignments) {
+  const inferredPeriod = inferPayPeriodFromIncomeCsv(assignments.incomeFile?.text || "");
+  if (!inferredPeriod) return false;
+  if (elements.periodStart.value === inferredPeriod.start && elements.periodEnd.value === inferredPeriod.end) {
+    return false;
+  }
+
+  const currentReport = buildPayrollReport(payrollPayloadForPeriod(elements.periodStart.value, elements.periodEnd.value));
+  if (Object.keys(currentReport.clinicians).length > 0) return false;
+
+  const inferredReport = buildPayrollReport(payrollPayloadForPeriod(inferredPeriod.start, inferredPeriod.end));
+  if (Object.keys(inferredReport.clinicians).length === 0) return false;
+
+  elements.periodStart.value = inferredPeriod.start;
+  elements.periodEnd.value = inferredPeriod.end;
+  return true;
+}
+
 function buildReport() {
+  return buildPayrollReport(payrollPayloadForPeriod(elements.periodStart.value, elements.periodEnd.value));
+}
+
+function payrollPayloadForPeriod(periodStart, periodEnd) {
   const payload = {
     incomeCsv: "",
     appointmentCsv: "",
@@ -362,15 +440,15 @@ function buildReport() {
     paymentExportCsv: "",
     insurancePaymentsCsv: "",
     contracts: state.contracts,
-    periodStart: elements.periodStart.value,
-    periodEnd: elements.periodEnd.value,
+    periodStart,
+    periodEnd,
   };
 
   for (const [inputId, payloadKey] of Object.entries(fileKeys)) {
     payload[payloadKey] = state.files[inputId]?.text || "";
   }
 
-  return buildPayrollReport(payload);
+  return payload;
 }
 
 function mergeMissingContracts(names) {
@@ -998,6 +1076,16 @@ async function restoreSavedState(defaultPeriodValue) {
     return;
   }
 
+  if (applyDraftToPanel(restoredDraft, defaultPeriodValue)) {
+    if (!draft && legacyDraft) {
+      await persistDraft();
+    }
+    setActionStatus(`Restored ${importFileCount()} import${importFileCount() === 1 ? "" : "s"}.`, "success");
+    return;
+  }
+}
+
+function applyDraftToPanel(restoredDraft, defaultPeriodValue) {
   state.files = sanitizeStoredFiles(restoredDraft.files);
   state.contracts = {
     ...state.contracts,
@@ -1012,14 +1100,24 @@ async function restoreSavedState(defaultPeriodValue) {
 
   if (hasImportFiles()) {
     rebuildFromState({ showResults: Boolean(restoredDraft.resultsVisible) });
-    if (!draft && legacyDraft) {
-      await persistDraft();
-    }
-    setActionStatus(`Restored ${importFileCount()} import${importFileCount() === 1 ? "" : "s"}.`, "success");
-    return;
+    return true;
   }
 
   renderContracts([]);
+  renderGuidance();
+  return false;
+}
+
+function handleExternalStorageChange(changes, areaName) {
+  if (areaName !== "local") return;
+
+  const draft = changes[DRAFT_STORAGE_KEY]?.newValue;
+  if (!draft || draft.version !== 1 || draft.importSource !== "bulk-importer") return;
+  if (draft.savedAt && draft.savedAt === lastAppliedImporterDraft) return;
+
+  lastAppliedImporterDraft = draft.savedAt || String(Date.now());
+  applyDraftToPanel(draft, defaultPayPeriod(new Date()));
+  setActionStatus(`Imported ${importFileCount()} export${importFileCount() === 1 ? "" : "s"} from the folder importer.`, "success");
 }
 
 function serializeDraft() {
@@ -1097,6 +1195,8 @@ function clearFileInputLabels() {
 function setControlsBusy(isBusy) {
   elements.calculateButton.disabled = isBusy;
   elements.resetButton.disabled = isBusy;
+  elements.openImporterButton.disabled = isBusy;
+  elements.bulkFilesInput.disabled = isBusy;
 }
 
 function setActionStatus(message, tone = "") {

@@ -114,18 +114,27 @@ test("statement pages include clickable payment source tabs", async () => {
   assert.match(printPageJs, /panel\.hidden = panel\.dataset\.paymentPanel !== selected/);
 });
 
-test("supports selecting one folder and inferring import files", async () => {
+test("supports bulk imports without the side-panel directory picker crash path", async () => {
   const sidePanelHtml = await readFile(new URL("../sidepanel.html", import.meta.url), "utf8");
   const sidePanelJs = await readFile(new URL("../src/sidepanel.js", import.meta.url), "utf8");
+  const importerHtml = await readFile(new URL("../importer.html", import.meta.url), "utf8");
+  const importerJs = await readFile(new URL("../src/importer.js", import.meta.url), "utf8");
 
-  assert.match(sidePanelHtml, /id="folderInput"/);
-  assert.match(sidePanelHtml, /webkitdirectory/);
+  assert.match(sidePanelHtml, /id="bulkImportDropzone"/);
+  assert.match(sidePanelHtml, /id="openImporterButton"/);
+  assert.match(sidePanelHtml, /id="bulkFilesInput"/);
+  assert.doesNotMatch(sidePanelHtml, /id="folderInput"[^>]*webkitdirectory/);
   assert.match(sidePanelHtml, /\.xlsx,.xls/);
-  assert.match(sidePanelHtml, /Choose Folder/);
-  assert.match(sidePanelHtml, /CSV or Excel exports/);
-  assert.match(sidePanelJs, /inferImportFiles/);
+  assert.match(sidePanelHtml, /Drop a folder or exported files here/);
+  assert.match(sidePanelJs, /filesFromDataTransfer/);
+  assert.match(sidePanelJs, /buildSimplePracticeImport/);
   assert.match(sidePanelJs, /isSupportedImportFile/);
-  assert.match(sidePanelJs, /handleFolderChange/);
+  assert.match(sidePanelJs, /handleBulkDrop/);
+  assert.match(sidePanelJs, /inferPayPeriodFromIncomeCsv/);
+  assert.match(importerHtml, /id="importerFolderInput"/);
+  assert.match(importerHtml, /webkitdirectory/);
+  assert.match(importerJs, /importSource:\s*"bulk-importer"/);
+  assert.match(importerJs, /payrollSidePanelDraft/);
 });
 
 test("persists imported data and offers a reset beside calculate", async () => {

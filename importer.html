@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clinic Payroll Folder Importer</title>
+    <link rel="stylesheet" href="src/sidepanel.css">
+  </head>
+  <body class="importer-page">
+    <main class="importer-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">New Pattern Counseling</p>
+          <h1>Folder Importer</h1>
+        </div>
+        <p id="importerStatus" class="action-status" role="status" aria-live="polite"></p>
+      </header>
+
+      <section id="importerDropzone" class="panel importer-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Import SimplePractice exports</h2>
+            <p class="muted">Choose the export folder, or drop the folder or files here.</p>
+          </div>
+          <button id="closeImporterButton" class="ghost-button" type="button">Close</button>
+        </div>
+
+        <label class="folder-picker-control">
+          <input id="importerFolderInput" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" webkitdirectory directory multiple>
+          <span class="file-action">Choose folder</span>
+        </label>
+
+        <label class="folder-picker-control">
+          <input id="importerFilesInput" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple>
+          <span class="file-action">Choose export files</span>
+        </label>
+
+        <p id="importerDetail" class="import-status">The side panel will update after import.</p>
+        <div id="importerChecklist" class="import-checklist" aria-label="Imported files"></div>
+      </section>
+    </main>
+
+    <script type="module" src="src/importer.js"></script>
+  </body>
+</html>
