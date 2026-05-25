@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { inferImportFiles, prioritizeImportCandidates } from "../src/importInference.js";
+import { fingerprintImportFile, inferImportFiles, prioritizeImportCandidates } from "../src/importInference.js";
 
 test("infers SimplePractice export roles from one selected folder", () => {
   const files = [
@@ -16,6 +16,10 @@ test("infers SimplePractice export roles from one selected folder", () => {
     {
       name: "insurance_payment_reports_report.csv",
       text: "Date Received,Client,Payer,Amount,Clearinghouse Reference,Payer Claim,Payment Reference,Payment Status\n",
+    },
+    {
+      name: "insurance_payer_allocation_report.csv",
+      text: "Payer,Clinician,Amount\nPayer Alpha,Clinician A,120.00\n",
     },
     {
       name: "Pay period report - generated at 05_24_2026 18_16.csv",
@@ -34,6 +38,7 @@ test("infers SimplePractice export roles from one selected folder", () => {
   assert.equal(result.assignments.cardFile.name, "Card_Transactions_Report_For_New_Pattern_Counseling_LLC_2026-05-24_175957 (1).csv");
   assert.equal(result.assignments.paymentFile.name, "PaymentExport_04252026.csv");
   assert.equal(result.assignments.insuranceFile.name, "insurance_payment_reports_report.csv");
+  assert.equal(result.assignments.insuranceAllocationFile.name, "insurance_payer_allocation_report.csv");
   assert.deepEqual(result.unmatched, []);
 });
 
@@ -117,6 +122,19 @@ test("keeps looking for smaller hinted exports after skipping an oversized candi
 
   assert.deepEqual(plan.candidates.map((candidate) => candidate.name), ["appointment-status-report-current.csv"]);
   assert.deepEqual(plan.oversized.map((candidate) => candidate.name), ["appointment-status-report-huge.csv"]);
+});
+
+test("fingerprints duplicate exports and keeps only one assignable copy", () => {
+  const text = "Clinician,Source,Date Paid,Appointment,Amount Paid\nClinician A,Client payment,04/25/2026,04/25/2026,10\n";
+  const result = inferImportFiles([
+    { name: "Pay period report.csv", text },
+    { name: "Pay period report copy.csv", text: `${text}\n` },
+  ]);
+
+  assert.equal(result.assignments.incomeFile.name, "Pay period report.csv");
+  assert.equal(result.duplicates.length, 1);
+  assert.equal(result.duplicates[0].file.name, "Pay period report copy.csv");
+  assert.equal(fingerprintImportFile(result.duplicates[0].file), fingerprintImportFile(result.assignments.incomeFile));
 });
 
 function file(name, overrides = {}) {

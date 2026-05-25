@@ -3,6 +3,7 @@ import {
   formatMoney,
   generateClinicianCsv,
   generateClinicianDocument,
+  generateReportCsvExports,
   inferPayPeriodFromIncomeCsv,
 } from "./payroll.js";
 import { isSupportedImportFile, readImportFile } from "./importFileReader.js";
@@ -15,6 +16,7 @@ const fileKeys = {
   cardFile: "cardTransactionsCsv",
   paymentFile: "paymentExportCsv",
   insuranceFile: "insurancePaymentsCsv",
+  insuranceAllocationFile: "insuranceAllocationCsv",
 };
 
 const importRoles = [
@@ -48,10 +50,17 @@ const importRoles = [
   },
   {
     inputId: "insuranceFile",
-    label: "Insurance payments",
+    label: "Insurance payment report",
     badge: "Optional",
     priority: "optional",
     emptyText: "Insurance cross-check",
+  },
+  {
+    inputId: "insuranceAllocationFile",
+    label: "Insurance payer allocation",
+    badge: "Optional",
+    priority: "optional",
+    emptyText: "Insurance allocation by payer",
   },
 ];
 
@@ -60,6 +69,7 @@ const DRAFT_STORAGE_KEY = "payrollSidePanelDraft";
 const LEGACY_DRAFT_STORAGE_KEY = "payrollWidgetDraft";
 const DEFAULT_IMPORT_STATUS = "Drop a folder here, open the folder importer, or choose the export files.";
 const DRAFT_SAVE_DELAY_MS = 250;
+const CONTRACT_SAVE_DELAY_MS = 250;
 
 const sessionTypeLabels = [
   ["individual", "Individual"],
@@ -79,6 +89,7 @@ const state = {
 };
 
 let draftSaveTimer = null;
+let contractSaveTimer = null;
 let lastAppliedImporterDraft = "";
 
 const elements = {
@@ -93,7 +104,6 @@ const elements = {
   importProgress: document.querySelector("#importProgress"),
   rulesProgress: document.querySelector("#rulesProgress"),
   resultsProgress: document.querySelector("#resultsProgress"),
-  workflowSteps: document.querySelector("#workflowSteps"),
   saveRulesButton: document.querySelector("#saveRulesButton"),
   clearFilesButton: document.querySelector("#clearFilesButton"),
   bulkImportDropzone: document.querySelector("#bulkImportDropzone"),
@@ -103,6 +113,7 @@ const elements = {
   importChecklist: document.querySelector("#importChecklist"),
   printAllButton: document.querySelector("#printAllButton"),
   downloadClinicianCsvsButton: document.querySelector("#downloadClinicianCsvsButton"),
+  downloadLedgersButton: document.querySelector("#downloadLedgersButton"),
   downloadSummaryButton: document.querySelector("#downloadSummaryButton"),
   contractsList: document.querySelector("#contractsList"),
   contractCount: document.querySelector("#contractCount"),
@@ -111,6 +122,11 @@ const elements = {
   incomeCards: document.querySelector("#incomeCards"),
   reconciliationCards: document.querySelector("#reconciliationCards"),
   warningsList: document.querySelector("#warningsList"),
+  warningDrawer: document.querySelector("#warningDrawer"),
+  warningDrawerClose: document.querySelector("#warningDrawerClose"),
+  warningDrawerSummary: document.querySelector("#warningDrawerSummary"),
+  warningSearchInput: document.querySelector("#warningSearchInput"),
+  warningDrawerList: document.querySelector("#warningDrawerList"),
   clinicianResults: document.querySelector("#clinicianResults"),
   contractTemplate: document.querySelector("#contractTemplate"),
 };
@@ -156,17 +172,24 @@ function bindEvents() {
   elements.bulkImportDropzone.addEventListener("drop", handleBulkDrop);
   elements.printAllButton.addEventListener("click", printAllStatements);
   elements.downloadClinicianCsvsButton.addEventListener("click", downloadClinicianCsvs);
+  elements.downloadLedgersButton.addEventListener("click", downloadLedgerCsvs);
   elements.downloadSummaryButton.addEventListener("click", downloadSummaryCsv);
+  elements.warningsList.addEventListener("click", handleWarningsClick);
+  elements.warningDrawerClose.addEventListener("click", closeWarningDrawer);
+  elements.warningDrawer.addEventListener("click", handleWarningDrawerBackdropClick);
+  elements.warningSearchInput.addEventListener("input", renderWarningDrawer);
   elements.contractsList.addEventListener("change", handleContractEdit);
   elements.contractsList.addEventListener("input", handleContractEdit);
   elements.periodStart.addEventListener("change", refreshCliniciansFromImports);
   elements.periodEnd.addEventListener("change", refreshCliniciansFromImports);
+  window.addEventListener("keydown", handleGlobalKeydown);
   window.addEventListener("pagehide", () => {
     try {
       collectContractsFromDom();
     } catch {
-      // Draft saves are best-effort during side panel teardown.
+      // Side panel teardown saves are best-effort.
     }
+    persistContracts().catch(() => {});
     persistDraft().catch(() => {});
   });
   if (globalThis.chrome?.storage?.onChanged) {
@@ -300,8 +323,7 @@ async function calculateAndRender() {
     }
 
     const report = rebuildFromState({ showResults: true });
-    await storageSet(CONTRACTS_STORAGE_KEY, state.contracts);
-    await persistDraft();
+    await Promise.all([persistContracts(), persistDraft()]);
     const clinicianCount = Object.keys(report.clinicians).length;
     setActionStatus(`Calculated ${clinicianCount} clinician${clinicianCount === 1 ? "" : "s"}.`, "success");
     scrollResultsIntoView();
@@ -315,8 +337,7 @@ async function calculateAndRender() {
 async function saveRules() {
   collectContractsFromDom();
   renderGuidance();
-  await storageSet(CONTRACTS_STORAGE_KEY, state.contracts);
-  await persistDraft();
+  await Promise.all([persistContracts(), persistDraft()]);
   elements.contractCount.textContent = "Pay rules saved.";
   setActionStatus("Pay rules saved.", "success");
 }
@@ -330,6 +351,7 @@ async function clearFiles() {
   state.report = null;
   state.resultsVisible = false;
   elements.resultsPanel.classList.add("hidden");
+  closeWarningDrawer({ restoreFocus: false, resetSearch: true });
   renderContracts([]);
   renderGuidance();
   await persistDraft();
@@ -337,7 +359,15 @@ async function clearFiles() {
 }
 
 async function resetWidget() {
-  if (!window.confirm("Reset dates, imported files, draft pay-rule edits, and results? Saved pay rules stay available.")) {
+  if (!window.confirm("Reset dates, imported files, and results? Clinician pay rules stay saved.")) {
+    return;
+  }
+
+  try {
+    collectContractsFromDom();
+    await persistContracts();
+  } catch (error) {
+    setActionStatus(`Could not save clinician rules before reset: ${errorMessage(error)}`, "error");
     return;
   }
 
@@ -353,6 +383,7 @@ async function resetWidget() {
   elements.folderImportStatus.textContent = DEFAULT_IMPORT_STATUS;
   clearFileInputLabels();
   elements.resultsPanel.classList.add("hidden");
+  closeWarningDrawer({ restoreFocus: false, resetSearch: true });
   renderContracts([]);
   renderGuidance();
   await Promise.all([
@@ -374,6 +405,7 @@ function rebuildFromState({ showResults = false } = {}) {
     renderResults(report);
   } else {
     elements.resultsPanel.classList.add("hidden");
+    closeWarningDrawer({ restoreFocus: false, resetSearch: true });
   }
 
   renderGuidance();
@@ -399,10 +431,11 @@ function renderManualFileLabels(assignments) {
 function folderStatusText(result, importPlan = null, readErrors = [], scanSummary = {}) {
   const matchedCount = Object.keys(result.assignments).length;
   const missingLabels = result.missing.map((role) => role.label);
-  const unmatchedCount = result.unmatched.length;
+  const unmatchedCount = Math.max(0, result.unmatched.length - (result.duplicates?.length || 0));
   const parts = [`Matched ${matchedCount} export${matchedCount === 1 ? "" : "s"}.`];
   if (missingLabels.length) parts.push(`Missing: ${missingLabels.join(", ")}.`);
   if (unmatchedCount) parts.push(`${unmatchedCount} file${unmatchedCount === 1 ? "" : "s"} not recognized.`);
+  if (result.duplicates?.length) parts.push(`Skipped ${result.duplicates.length} duplicate export${result.duplicates.length === 1 ? "" : "s"}.`);
   if (readErrors.length) parts.push(`${readErrors.length} file${readErrors.length === 1 ? "" : "s"} could not be read.`);
   if (importPlan?.skipped?.length) parts.push(`Skipped ${importPlan.skipped.length} lower-priority file${importPlan.skipped.length === 1 ? "" : "s"} to keep the browser responsive.`);
   if (importPlan?.oversized?.length) parts.push(`Skipped ${importPlan.oversized.length} oversized file${importPlan.oversized.length === 1 ? "" : "s"}.`);
@@ -484,9 +517,12 @@ function renderContracts(names) {
     const clinician = state.report?.clinicians[name];
 
     card.dataset.clinician = name;
+    card.classList.toggle("needs-review", Boolean(contract.needsReview));
     heading.textContent = name;
     select.value = contract.payType;
-    description.textContent = payRuleDescription(contract.payType);
+    description.textContent = contract.needsReview
+      ? "Legacy percent-of-clinic-income rules are no longer supported. Choose a new agreement before final payroll."
+      : payRuleDescription(contract.payType);
     fields.innerHTML = `${sessionMixHtml(clinician)}${contractFieldsHtml(contract)}`;
     elements.contractsList.append(fragment);
   }
@@ -531,18 +567,8 @@ function contractFieldsHtml(contract) {
     ].join("");
   }
 
-  if (contract.payType === "percent_collections" || contract.payType === "percent_clinic_income") {
+  if (contract.payType === "percent_collections") {
     const percentageField = numberFieldHtml("percentage", "Percent", contract.percentage, "wide", "0.01");
-    if (contract.payType === "percent_clinic_income") {
-      return [
-        `<p class="field-group-title">Percentage agreement</p>`,
-        percentageField,
-        selectFieldHtml("incomeBasis", "Income basis", contract.incomeBasis, [
-          ["gross", "Gross SimplePractice income"],
-          ["net_after_processing_fees", "Net after card processing fees"],
-        ], "wide"),
-      ].join("");
-    }
     return [
       `<p class="field-group-title">Percentage agreement</p>`,
       percentageField,
@@ -558,7 +584,6 @@ function payRuleDescription(payType) {
     flat_session: "Pays one fixed dollar amount for each kept session in the appointment status report.",
     per_session: "Different rates by session type. Pays fixed dollar amounts based on the billing code.",
     percent_collections: "Pays a percentage of insurance and client payments received for this clinician.",
-    percent_clinic_income: "Pays a percentage of total clinic income received during this pay period.",
   };
   return descriptions[payType] || descriptions.none;
 }
@@ -571,21 +596,6 @@ function numberFieldHtml(name, label, value, className = "", step = "1") {
     </label>`;
 }
 
-function selectFieldHtml(name, label, value, options, className = "") {
-  return `
-    <label class="${className}">
-      <span>${label}</span>
-      <select data-field="${name}">
-        ${options
-          .map(([optionValue, optionLabel]) => {
-            const selected = optionValue === value ? " selected" : "";
-            return `<option value="${escapeHtml(optionValue)}"${selected}>${escapeHtml(optionLabel)}</option>`;
-          })
-          .join("")}
-      </select>
-    </label>`;
-}
-
 function handleContractEdit(event) {
   const card = event.target.closest(".contract-card");
   if (!card) return;
@@ -595,9 +605,14 @@ function handleContractEdit(event) {
 
   if (event.target.classList.contains("pay-type")) {
     contract.payType = event.target.value;
+    if (contract.payType !== "none") {
+      contract.needsReview = false;
+      contract.legacyPayType = "";
+    }
     state.contracts[clinician] = contract;
     renderContracts(state.clinicianNames);
     renderGuidance();
+    scheduleContractSave();
     scheduleDraftSave();
     return;
   }
@@ -607,13 +622,12 @@ function handleContractEdit(event) {
     const value = event.target.value || "";
     if (field.startsWith("rate:")) {
       contract.sessionRates[field.replace("rate:", "")] = Number(value || 0);
-    } else if (field === "incomeBasis") {
-      contract.incomeBasis = value;
     } else {
       contract[field] = Number(value || 0);
     }
     state.contracts[clinician] = contract;
     renderGuidance();
+    scheduleContractSave();
     scheduleDraftSave();
   }
 }
@@ -644,30 +658,26 @@ function renderResults(report) {
   elements.resultPeriod.textContent = `${report.period.start} to ${report.period.end}`;
 
   elements.incomeCards.innerHTML = [
-    metricHtml("Gross income", formatMoney(report.clinicIncome.total), "SimplePractice income allocation"),
-    metricHtml("Card processing fees", formatMoney(report.clinicIncome.processingFeeAdjustment), stripeFeeNote(report)),
-    metricHtml("Net after processing fees", formatMoney(report.clinicIncome.netAfterProcessingFees.total), "Gross income minus card processing fees"),
-    metricHtml("Insurance", formatMoney(report.clinicIncome.insurance), "Gross insurance payments"),
+    metricHtml("Gross income", formatMoney(report.contributionPnl.revenue), "SimplePractice income allocation"),
+    metricHtml("Clinician compensation", formatMoney(report.contributionPnl.clinicianCompensation), "Calculated payroll from active clinician pay rules"),
+    metricHtml("Processing fees", formatMoney(report.contributionPnl.processingFees), stripeFeeNote(report)),
+    metricHtml("Contribution result", formatMoney(report.contributionPnl.contributionResult), report.contributionPnl.fullPnlStatus),
+    metricHtml("Trailing payments", formatMoney(report.trailingPayments.amount), `${report.trailingPayments.count} payment${report.trailingPayments.count === 1 ? "" : "s"} outside the current service period or missing service dates`),
+    metricHtml("Unpaid balances", formatMoney(report.ledgerReview.unpaidAppointmentBalance), "Appointment rows with unpaid balances and no matched payment in this pay period"),
   ].join("");
 
   elements.reconciliationCards.innerHTML = [
-    metricHtml("Payment export", formatMoney(report.reconciliation.paymentExportTotal), differenceText(report.reconciliation.paymentExportDifference)),
-    metricHtml("Insurance report", formatMoney(report.reconciliation.insurancePaymentReportTotal), differenceText(report.reconciliation.insuranceReportDifference)),
-    metricHtml("Stripe gross payments", formatMoney(report.reconciliation.stripeGrossPayments), "From SimplePractice payment export"),
-    metricHtml("Stripe deposits", formatMoney(report.reconciliation.stripeDeposits), "Bank payout total by available date"),
-    metricHtml("Stripe payout gap", formatMoney(report.reconciliation.stripePayoutGap), stripeGapNote(report)),
+    metricHtml("Income allocation", formatMoney(report.reconciliation.incomeAllocationTotal), "Pay-period report total"),
+    optionalMetricHtml("Payment export", report.reconciliation.paymentExportTotal, report.reconciliation.paymentExportAvailable, differenceText(report.reconciliation.paymentExportDifference), "Payment export not imported"),
+    optionalMetricHtml("Insurance allocation", report.reconciliation.insurancePayerAllocationTotal, report.reconciliation.insurancePayerAllocationAvailable, differenceText(report.reconciliation.insurancePayerAllocationDifference), "Insurance payer allocation not imported"),
+    optionalMetricHtml("Insurance report", report.reconciliation.insurancePaymentReportTotal, report.reconciliation.insurancePaymentReportAvailable, differenceText(report.reconciliation.insuranceReportDifference), "Insurance payment report not imported"),
+    optionalMetricHtml("Stripe gross payments", report.reconciliation.stripeGrossPayments, report.reconciliation.stripeGrossPaymentsAvailable, "From SimplePractice payment export", stripeGrossUnavailableNote(report)),
+    optionalMetricHtml("Stripe deposits", report.reconciliation.stripeDeposits, report.reconciliation.cardTransactionsAvailable, "Bank payout total by available date", "Card transactions not imported"),
+    optionalMetricHtml("Stripe payout gap", report.reconciliation.stripePayoutGap, report.reconciliation.stripePayoutGapAvailable, stripeGapNote(report), stripeGapUnavailableNote(report)),
   ].join("");
 
-  elements.warningsList.innerHTML = report.warnings
-    .slice(0, 10)
-    .map((warning) => `<div class="warning">${escapeHtml(warning.message)}</div>`)
-    .join("");
-  if (report.warnings.length > 10) {
-    elements.warningsList.insertAdjacentHTML(
-      "beforeend",
-      `<div class="warning">${report.warnings.length - 10} more warnings hidden.</div>`,
-    );
-  }
+  renderWarningSummary(report.warnings);
+  renderWarningDrawer();
 
   elements.clinicianResults.innerHTML = Object.values(report.clinicians)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -682,8 +692,104 @@ function renderResults(report) {
   }
 }
 
+function renderWarningSummary(warnings = []) {
+  const count = warnings.length;
+  if (!count) {
+    elements.warningsList.innerHTML = "";
+    closeWarningDrawer({ restoreFocus: false, resetSearch: true });
+    return;
+  }
+
+  elements.warningsList.innerHTML = `
+    <button class="warning-summary warning-summary-button" type="button" data-open-warnings aria-label="Open ${count} payroll warning${count === 1 ? "" : "s"}">
+      <span>
+        <strong>${count} warning${count === 1 ? "" : "s"}</strong>
+        <small>Payroll review</small>
+      </span>
+      <em>Review</em>
+    </button>`;
+}
+
+function handleWarningsClick(event) {
+  if (!event.target.closest("[data-open-warnings]")) return;
+  openWarningDrawer();
+}
+
+function openWarningDrawer() {
+  if (!state.report?.warnings?.length) return;
+
+  elements.warningDrawer.classList.remove("hidden");
+  elements.warningDrawer.setAttribute("aria-hidden", "false");
+  elements.warningSearchInput.value = "";
+  renderWarningDrawer();
+  requestAnimationFrame(() => elements.warningSearchInput.focus());
+}
+
+function closeWarningDrawer({ restoreFocus = true, resetSearch = false } = {}) {
+  elements.warningDrawer.classList.add("hidden");
+  elements.warningDrawer.setAttribute("aria-hidden", "true");
+  if (resetSearch) {
+    elements.warningSearchInput.value = "";
+  }
+  if (restoreFocus) {
+    elements.warningsList.querySelector("[data-open-warnings]")?.focus();
+  }
+}
+
+function handleWarningDrawerBackdropClick(event) {
+  if (event.target === elements.warningDrawer) {
+    closeWarningDrawer();
+  }
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key === "Escape" && !elements.warningDrawer.classList.contains("hidden")) {
+    closeWarningDrawer();
+  }
+}
+
+function renderWarningDrawer() {
+  const warnings = state.report?.warnings || [];
+  const query = elements.warningSearchInput.value.trim().toLowerCase();
+  const filteredWarnings = query
+    ? warnings.filter((warning) => warningSearchText(warning).includes(query))
+    : warnings;
+
+  elements.warningDrawerSummary.textContent = query
+    ? `${filteredWarnings.length} of ${warnings.length} warning${warnings.length === 1 ? "" : "s"} match`
+    : `${warnings.length} warning${warnings.length === 1 ? "" : "s"} in this pay run`;
+  elements.warningDrawerList.innerHTML = filteredWarnings.length
+    ? filteredWarnings.map(warningDrawerItemHtml).join("")
+    : `<div class="drawer-empty">No warnings match that search.</div>`;
+}
+
+function warningDrawerItemHtml(warning) {
+  return `
+    <article class="warning-drawer-item">
+      <span>${escapeHtml(formatWarningType(warning.type))}</span>
+      <p>${escapeHtml(warning.message)}</p>
+      ${warning.clinician ? `<small>${escapeHtml(warning.clinician)}</small>` : ""}
+    </article>`;
+}
+
+function warningSearchText(warning) {
+  return [
+    formatWarningType(warning.type),
+    warning.clinician,
+    warning.message,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function formatWarningType(type) {
+  return String(type || "warning").replaceAll("_", " ");
+}
+
 function metricHtml(label, value, note) {
   return `<div class="metric" title="${escapeHtml(note)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`;
+}
+
+function optionalMetricHtml(label, value, available, note, unavailableNote) {
+  return metricHtml(label, available ? formatMoney(value) : "Unavailable", available ? note : unavailableNote);
 }
 
 function differenceText(value) {
@@ -693,15 +799,31 @@ function differenceText(value) {
 }
 
 function stripeFeeNote(report) {
-  return report.reconciliation.stripeFeesAreKnown
-    ? "Actual fee column found in card transactions"
-    : "Estimated from SimplePractice card rate";
+  if (report.reconciliation.processingFeeStatus === "actual") {
+    return "Actual fee column found in card transactions";
+  }
+  if (report.reconciliation.processingFeeStatus === "estimated") {
+    return "Estimated from SimplePractice card payments";
+  }
+  return "Unavailable until card fee rows or eligible payment export are imported";
+}
+
+function stripeGrossUnavailableNote(report) {
+  return report.reconciliation.paymentExportAvailable
+    ? "No Stripe gross payment rows found in payment export"
+    : "Payment export not imported";
 }
 
 function stripeGapNote(report) {
   return report.reconciliation.stripeFeesAreKnown
     ? "Should roughly match known fees"
     : "May be fees plus payout timing";
+}
+
+function stripeGapUnavailableNote(report) {
+  if (!report.reconciliation.cardTransactionsAvailable) return "Needs card transactions";
+  if (!report.reconciliation.paymentExportAvailable) return "Needs payment export with Stripe gross payment rows";
+  return "Needs Stripe gross payment rows from payment export";
 }
 
 function clinicianRowHtml(clinician) {
@@ -716,6 +838,9 @@ function clinicianRowHtml(clinician) {
         <strong>${clinician.sessionCounts.total}</strong>
         ${sessionCountSummaryHtml(clinician)}
       </td>
+      <td class="review-cell">
+        ${clinicianReviewHtml(clinician)}
+      </td>
       <td title="${escapeHtml(clinician.pay.explanation)}">${escapeHtml(clinician.pay.explanation)}</td>
       <td>
         <div class="row-actions">
@@ -723,6 +848,14 @@ function clinicianRowHtml(clinician) {
         </div>
       </td>
     </tr>`;
+}
+
+function clinicianReviewHtml(clinician) {
+  return `
+    <small>Trailing ${clinician.trailingPayments.length}</small>
+    <small>Split ${clinician.splitPaymentRows.length}</small>
+    <small>Unmatched pay ${clinician.unmatchedPayments.length}</small>
+    <small>Open appts ${clinician.unmatchedAppointments.length}</small>`;
 }
 
 function sessionCountSummaryHtml(clinician) {
@@ -766,27 +899,32 @@ function printablePage(body, report) {
         <meta charset="utf-8">
         <title>Clinician Statements ${escapeHtml(report.period.start)} to ${escapeHtml(report.period.end)}</title>
         <style>
+          * { box-sizing: border-box; }
           body { margin: 0; color: #202528; font-family: Arial, sans-serif; background: #f6f7f5; }
           .print-bar { position: sticky; top: 0; padding: 12px; background: #ffffff; border-bottom: 1px solid #d8dedc; font-weight: 700; }
-          .clinician-document { break-after: page; max-width: 920px; margin: 20px auto; padding: 28px; background: #fff; border: 1px solid #d8dedc; }
+          .clinician-document { break-after: page; width: min(920px, calc(100vw - 24px)); max-width: 100%; margin: 20px auto; padding: 28px; overflow-x: hidden; background: #fff; border: 1px solid #d8dedc; }
           .eyebrow { color: #155f46; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
           h1 { margin: 0; font-size: 28px; }
           h2 { margin: 24px 0 8px; font-size: 16px; }
           p { margin: 4px 0; }
+          section { min-width: 0; max-width: 100%; overflow-x: auto; }
           .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0; }
           .summary-grid div { border: 1px solid #d8dedc; border-radius: 8px; padding: 10px; }
           .summary-grid span { display: block; color: #687276; font-size: 11px; text-transform: uppercase; }
           .summary-grid strong { display: block; margin-top: 7px; font-size: 18px; }
-          table { width: 100%; border-collapse: collapse; }
+          table { width: 100%; min-width: 640px; border-collapse: collapse; }
           th, td { padding: 8px; border-bottom: 1px solid #e8ecea; text-align: left; vertical-align: top; }
           th { color: #687276; background: #f4f7f6; font-size: 11px; text-transform: uppercase; }
           .number { text-align: right; }
-          .payment-tabs { display: grid; gap: 10px; }
-          .payment-tab-list { display: flex; flex-wrap: wrap; gap: 8px; }
+          .payment-tabs { display: grid; gap: 10px; max-width: 100%; min-width: 0; }
+          .payment-tab-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 8px; max-width: 100%; min-width: 0; }
           .payment-tab {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
+            justify-content: space-between;
+            gap: 8px;
+            width: 100%;
+            min-width: 0;
             border: 1px solid #cdd9d5;
             border-radius: 999px;
             background: #f4f7f6;
@@ -796,9 +934,12 @@ function printablePage(body, report) {
             font-size: 13px;
             font-weight: 700;
             cursor: pointer;
+            overflow-wrap: anywhere;
+            white-space: normal;
           }
           .payment-tab[aria-selected="true"] { background: #1f7a5a; border-color: #1f7a5a; color: #fff; }
           .payment-tab span {
+            flex: 0 0 auto;
             min-width: 22px;
             border-radius: 999px;
             background: rgba(255, 255, 255, 0.72);
@@ -808,7 +949,13 @@ function printablePage(body, report) {
             text-align: center;
           }
           .payment-tab[aria-selected="true"] span { background: rgba(255, 255, 255, 0.9); }
+          .payment-panel { max-width: 100%; overflow-x: auto; }
           .payment-panel[hidden] { display: none; }
+          @media (max-width: 700px) {
+            .clinician-document { width: calc(100vw - 16px); margin: 8px auto; padding: 18px; }
+            h1 { font-size: 24px; }
+            .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          }
           @media print {
             body { background: #fff; }
             .print-bar { display: none; }
@@ -864,32 +1011,198 @@ function downloadClinicianCsvs() {
     return;
   }
 
-  clinicians.forEach((clinician, index) => {
-    const fileName = [
+  const files = clinicians.map((clinician) => ({
+    name: [
       "clinician-pay",
       slugify(clinician.name),
       state.report.period.start,
       "to",
       state.report.period.end,
-    ].join("-");
+    ].join("-") + ".csv",
+    text: generateClinicianCsv(clinician, state.report),
+  }));
 
-    setTimeout(() => {
-      downloadTextFile(`${fileName}.csv`, generateClinicianCsv(clinician, state.report));
-    }, index * 150);
-  });
+  downloadZipFile(
+    `clinician-pay-statements-${state.report.period.start}-to-${state.report.period.end}.zip`,
+    files,
+  );
+}
+
+function downloadLedgerCsvs() {
+  if (!state.report) return;
+
+  const exports = generateReportCsvExports(state.report);
+  const filePrefix = `clinic-payroll-${state.report.period.start}-to-${state.report.period.end}`;
+  const files = [
+    ["appointment-ledger", exports.appointmentLedger],
+    ["payment-ledger", exports.paymentLedger],
+    ["split-payment-detail", exports.splitPaymentDetail],
+    ["outlier-payments", exports.outlierPayments],
+    ["contribution-pnl", exports.contributionPnl],
+  ];
+
+  downloadZipFile(
+    `${filePrefix}-ledgers.zip`,
+    files.map(([name, csv]) => ({
+      name: `${filePrefix}-${name}.csv`,
+      text: csv,
+    })),
+  );
 }
 
 function sessionDetailExportClinician(clinician) {
   return clinician.sessionCounts.total > 0 || clinician.paymentRows.length > 0;
 }
 
-function downloadTextFile(fileName, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+function downloadTextFile(fileName, text, type = "text/csv") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function downloadZipFile(fileName, files) {
+  downloadBlob(fileName, createZipBlob(files));
+}
+
+function downloadBlob(fileName, blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function createZipBlob(files) {
+  const encoder = new TextEncoder();
+  const localFileParts = [];
+  const centralDirectoryParts = [];
+  const records = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(safeZipPath(file.name));
+    const dataBytes = encoder.encode(file.text || "");
+    const crc = crc32(dataBytes);
+    const timestamp = dosDateTime(new Date());
+    const localHeader = zipLocalFileHeader({
+      nameBytes,
+      dataBytes,
+      crc,
+      ...timestamp,
+    });
+
+    localFileParts.push(localHeader, dataBytes);
+    records.push({
+      nameBytes,
+      dataBytes,
+      crc,
+      offset,
+      ...timestamp,
+    });
+    offset += localHeader.byteLength + dataBytes.byteLength;
+  }
+
+  let centralDirectorySize = 0;
+  for (const record of records) {
+    const centralHeader = zipCentralDirectoryHeader(record);
+    centralDirectoryParts.push(centralHeader);
+    centralDirectorySize += centralHeader.byteLength;
+  }
+
+  const end = zipEndOfCentralDirectory({
+    fileCount: records.length,
+    centralDirectorySize,
+    centralDirectoryOffset: offset,
+  });
+
+  return new Blob([...localFileParts, ...centralDirectoryParts, end], { type: "application/zip" });
+}
+
+function zipLocalFileHeader({ nameBytes, dataBytes, crc, dosTime, dosDate }) {
+  const header = new Uint8Array(30 + nameBytes.byteLength);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0x0800, true);
+  view.setUint16(8, 0, true);
+  view.setUint16(10, dosTime, true);
+  view.setUint16(12, dosDate, true);
+  view.setUint32(14, crc, true);
+  view.setUint32(18, dataBytes.byteLength, true);
+  view.setUint32(22, dataBytes.byteLength, true);
+  view.setUint16(26, nameBytes.byteLength, true);
+  view.setUint16(28, 0, true);
+  header.set(nameBytes, 30);
+  return header;
+}
+
+function zipCentralDirectoryHeader({ nameBytes, dataBytes, crc, offset, dosTime, dosDate }) {
+  const header = new Uint8Array(46 + nameBytes.byteLength);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 20, true);
+  view.setUint16(8, 0x0800, true);
+  view.setUint16(10, 0, true);
+  view.setUint16(12, dosTime, true);
+  view.setUint16(14, dosDate, true);
+  view.setUint32(16, crc, true);
+  view.setUint32(20, dataBytes.byteLength, true);
+  view.setUint32(24, dataBytes.byteLength, true);
+  view.setUint16(28, nameBytes.byteLength, true);
+  view.setUint16(30, 0, true);
+  view.setUint16(32, 0, true);
+  view.setUint16(34, 0, true);
+  view.setUint16(36, 0, true);
+  view.setUint32(38, 0, true);
+  view.setUint32(42, offset, true);
+  header.set(nameBytes, 46);
+  return header;
+}
+
+function zipEndOfCentralDirectory({ fileCount, centralDirectorySize, centralDirectoryOffset }) {
+  const header = new Uint8Array(22);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(4, 0, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, fileCount, true);
+  view.setUint16(10, fileCount, true);
+  view.setUint32(12, centralDirectorySize, true);
+  view.setUint32(16, centralDirectoryOffset, true);
+  view.setUint16(20, 0, true);
+  return header;
+}
+
+function dosDateTime(date) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    dosTime: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+    dosDate: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function safeZipPath(name) {
+  return String(name || "export.csv")
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/") || "export.csv";
 }
 
 function extensionAssetUrl(assetPath) {
@@ -921,7 +1234,6 @@ function renderGuidance() {
     ? `${summary.readyRules}/${summary.clinicianCount}`
     : "0";
   elements.resultsProgress.textContent = summary.resultsCalculated ? "Done" : "None";
-  renderWorkflowSteps(summary);
   renderImportChecklist();
   renderImportControls();
 }
@@ -930,7 +1242,10 @@ function guidanceSummary() {
   const importCount = importFileCount();
   const clinicianCount = state.clinicianNames.length;
   const readyRules = state.clinicianNames
-    .filter((name) => normalizeContract(state.contracts[name]).payType !== "none")
+    .filter((name) => {
+      const contract = normalizeContract(state.contracts[name]);
+      return contract.payType !== "none" && !contract.needsReview;
+    })
     .length;
   const missingRules = Math.max(clinicianCount - readyRules, 0);
   const resultsCalculated = Boolean(state.resultsVisible && state.report && hasImportFiles());
@@ -974,48 +1289,6 @@ function guidanceSummary() {
   };
 }
 
-function renderWorkflowSteps(summary) {
-  const steps = [
-    {
-      number: 1,
-      title: "Imports",
-      detail: summary.importCount
-        ? `${summary.importCount} file${summary.importCount === 1 ? "" : "s"} loaded`
-        : "No files loaded",
-      state: summary.importCount ? "complete" : "active",
-    },
-    {
-      number: 2,
-      title: "Pay rules",
-      detail: summary.clinicianCount
-        ? summary.missingRules
-          ? `${summary.missingRules} missing`
-          : `${summary.clinicianCount} ready`
-        : "Waiting for clinicians",
-      state: !summary.importCount ? "waiting" : summary.missingRules ? "active" : "complete",
-    },
-    {
-      number: 3,
-      title: "Results",
-      detail: summary.resultsCalculated ? "Calculated" : "Not run",
-      state: summary.resultsCalculated ? "complete" : summary.importCount && !summary.missingRules ? "active" : "waiting",
-    },
-  ];
-
-  elements.workflowSteps.innerHTML = steps.map(workflowStepHtml).join("");
-}
-
-function workflowStepHtml(step) {
-  return `
-    <div class="workflow-step" data-state="${escapeHtml(step.state)}">
-      <span class="workflow-step-number">${step.number}</span>
-      <div>
-        <strong>${escapeHtml(step.title)}</strong>
-        <small>${escapeHtml(step.detail)}</small>
-      </div>
-    </div>`;
-}
-
 function renderImportChecklist() {
   elements.importChecklist.innerHTML = importRoles
     .map((role) => {
@@ -1054,6 +1327,7 @@ function showInlineError(error) {
   elements.incomeCards.innerHTML = "";
   elements.reconciliationCards.innerHTML = "";
   elements.clinicianResults.innerHTML = "";
+  closeWarningDrawer({ restoreFocus: false, resetSearch: true });
   elements.warningsList.innerHTML = `<div class="warning">${escapeHtml(error.message || String(error))}</div>`;
   state.resultsVisible = true;
 }
@@ -1066,7 +1340,7 @@ async function restoreSavedState(defaultPeriodValue) {
   ]);
   const restoredDraft = draft || legacyDraft;
 
-  state.contracts = savedContracts || {};
+  state.contracts = normalizeContractsMap(savedContracts || {});
   elements.periodStart.value = defaultPeriodValue.start;
   elements.periodEnd.value = defaultPeriodValue.end;
   elements.folderImportStatus.textContent = DEFAULT_IMPORT_STATUS;
@@ -1087,10 +1361,10 @@ async function restoreSavedState(defaultPeriodValue) {
 
 function applyDraftToPanel(restoredDraft, defaultPeriodValue) {
   state.files = sanitizeStoredFiles(restoredDraft.files);
-  state.contracts = {
-    ...state.contracts,
+  state.contracts = normalizeContractsMap({
     ...(restoredDraft.contracts || {}),
-  };
+    ...state.contracts,
+  });
   elements.periodStart.value = restoredDraft.periodStart || defaultPeriodValue.start;
   elements.periodEnd.value = restoredDraft.periodEnd || defaultPeriodValue.end;
   elements.folderImportStatus.textContent = restoredDraft.folderImportStatus || restoredImportStatus();
@@ -1127,7 +1401,7 @@ function serializeDraft() {
     periodEnd: elements.periodEnd.value,
     folderImportStatus: elements.folderImportStatus.textContent || DEFAULT_IMPORT_STATUS,
     files: sanitizeStoredFiles(state.files),
-    contracts: state.contracts,
+    contracts: normalizeContractsMap(state.contracts),
     resultsVisible: state.resultsVisible,
     savedAt: new Date().toISOString(),
   };
@@ -1141,6 +1415,25 @@ function scheduleDraftSave() {
       setActionStatus(`Could not save draft: ${error.message || error}`, "error");
     });
   }, DRAFT_SAVE_DELAY_MS);
+}
+
+function scheduleContractSave() {
+  window.clearTimeout(contractSaveTimer);
+  contractSaveTimer = window.setTimeout(() => {
+    contractSaveTimer = null;
+    persistContracts().catch((error) => {
+      setActionStatus(`Could not save clinician rules: ${error.message || error}`, "error");
+    });
+  }, CONTRACT_SAVE_DELAY_MS);
+}
+
+async function persistContracts() {
+  if (contractSaveTimer) {
+    window.clearTimeout(contractSaveTimer);
+    contractSaveTimer = null;
+  }
+  state.contracts = normalizeContractsMap(state.contracts);
+  await storageSet(CONTRACTS_STORAGE_KEY, state.contracts);
 }
 
 async function persistDraft() {
@@ -1219,6 +1512,8 @@ function scrollResultsIntoView() {
 function defaultContract() {
   return {
     payType: "none",
+    legacyPayType: "",
+    needsReview: false,
     incomeBasis: "gross",
     flatRate: 0,
     percentage: 0,
@@ -1244,14 +1539,28 @@ function defaultSessionCounts() {
 }
 
 function normalizeContract(contract = {}) {
+  const payType = contract.payType === "percent_clinic_income"
+    ? "none"
+    : contract.payType || "none";
+  const needsReview = Boolean(contract.needsReview || contract.payType === "percent_clinic_income");
+
   return {
     ...defaultContract(),
     ...contract,
+    payType,
+    legacyPayType: needsReview ? "percent_clinic_income" : "",
+    needsReview,
     sessionRates: {
       ...defaultContract().sessionRates,
       ...(contract.sessionRates || {}),
     },
   };
+}
+
+function normalizeContractsMap(contracts = {}) {
+  return Object.fromEntries(
+    Object.entries(contracts).map(([name, contract]) => [name, normalizeContract(contract)]),
+  );
 }
 
 function defaultPayPeriod(today) {

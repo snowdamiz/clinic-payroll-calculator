@@ -15,6 +15,7 @@ const fileKeys = {
   cardFile: "cardTransactionsCsv",
   paymentFile: "paymentExportCsv",
   insuranceFile: "insurancePaymentsCsv",
+  insuranceAllocationFile: "insuranceAllocationCsv",
 };
 
 const elements = {
@@ -109,8 +110,8 @@ async function buildDraft(importResult) {
     storageGet(DRAFT_STORAGE_KEY, null),
   ]);
   const contracts = {
-    ...(savedContracts || {}),
     ...(currentDraft?.contracts || {}),
+    ...(savedContracts || {}),
   };
   const fallbackPeriod = defaultPayPeriod(new Date());
   const currentPeriod = {
@@ -171,10 +172,11 @@ function importStatusText(importResult, { periodWasInferred, period }) {
   const result = importResult.result;
   const matchedCount = Object.keys(result.assignments).length;
   const missingLabels = result.missing.map((role) => role.label);
-  const unmatchedCount = result.unmatched.length;
+  const unmatchedCount = Math.max(0, result.unmatched.length - (result.duplicates?.length || 0));
   const parts = [`Matched ${matchedCount} export${matchedCount === 1 ? "" : "s"}.`];
   if (missingLabels.length) parts.push(`Missing: ${missingLabels.join(", ")}.`);
   if (unmatchedCount) parts.push(`${unmatchedCount} file${unmatchedCount === 1 ? "" : "s"} not recognized.`);
+  if (result.duplicates?.length) parts.push(`Skipped ${result.duplicates.length} duplicate export${result.duplicates.length === 1 ? "" : "s"}.`);
   if (importResult.readErrors.length) parts.push(`${importResult.readErrors.length} file${importResult.readErrors.length === 1 ? "" : "s"} could not be read.`);
   if (importResult.importPlan?.skipped?.length) parts.push(`Skipped ${importResult.importPlan.skipped.length} lower-priority file${importResult.importPlan.skipped.length === 1 ? "" : "s"} to keep the browser responsive.`);
   if (importResult.importPlan?.oversized?.length) parts.push(`Skipped ${importResult.importPlan.oversized.length} oversized file${importResult.importPlan.oversized.length === 1 ? "" : "s"}.`);

@@ -29,7 +29,7 @@
           </div>
           <div class="readiness-metrics" aria-label="Run summary">
             <div>
-              <strong id="importProgress">0/5</strong>
+              <strong id="importProgress">0/6</strong>
               <span>Imports</span>
             </div>
             <div>
@@ -42,7 +42,6 @@
             </div>
           </div>
         </div>
-        <div id="workflowSteps" class="workflow-steps" aria-label="Payroll workflow"></div>
       </section>
 
       <section class="panel period-panel" aria-labelledby="periodHeading">
@@ -135,11 +134,23 @@
           </label>
           <label class="file-control" data-file-control="insuranceFile">
             <span class="file-control-title">
-              <span>Insurance payments</span>
+              <span>Insurance payment report</span>
               <em>Optional</em>
             </span>
             <span class="file-hint">Insurance report cross-check.</span>
             <input id="insuranceFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+            <span class="file-picker-row">
+              <span class="file-action">Choose file</span>
+              <small class="selected-file-name">Not selected</small>
+            </span>
+          </label>
+          <label class="file-control" data-file-control="insuranceAllocationFile">
+            <span class="file-control-title">
+              <span>Insurance payer allocation</span>
+              <em>Optional</em>
+            </span>
+            <span class="file-hint">Insurance allocations by payer and clinician.</span>
+            <input id="insuranceAllocationFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
             <span class="file-picker-row">
               <span class="file-action">Choose file</span>
               <small class="selected-file-name">Not selected</small>
@@ -163,8 +174,6 @@
                   <dd>Separate rates for individual, couples/family, group, intake, and other sessions.</dd>
                   <dt>Percent of clinician collections</dt>
                   <dd>Percentage of payments received for that clinician in this pay period.</dd>
-                  <dt>Percent of total clinic income</dt>
-                  <dd>Percentage of all clinic income received in this pay period.</dd>
                 </dl>
               </div>
             </div>
@@ -185,7 +194,8 @@
           </div>
           <div class="button-row">
             <button id="printAllButton" class="ghost-button" type="button">Print All</button>
-            <button id="downloadClinicianCsvsButton" class="ghost-button" type="button">Download Clinician CSVs</button>
+            <button id="downloadClinicianCsvsButton" class="ghost-button" type="button">Download Clinician ZIP</button>
+            <button id="downloadLedgersButton" class="ghost-button" type="button">Download Ledger ZIP</button>
             <button id="downloadSummaryButton" class="ghost-button" type="button">Download CSV</button>
           </div>
         </div>
@@ -219,8 +229,14 @@
                 </th>
                 <th>
                   <span class="column-heading-with-help">
+                    <span>Review</span>
+                    <span class="inline-help" tabindex="0" role="img" aria-label="Review counts show trailing collections, split-payment rows, unmatched payments, and open unpaid appointments." title="Trailing collections, split-payment rows, unmatched payments, and open unpaid appointments.">?</span>
+                  </span>
+                </th>
+                <th>
+                  <span class="column-heading-with-help">
                     <span>Method</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Method explains the pay rule used for this clinician." title="The pay rule used for this clinician, such as session-type rates or a percent of clinic income.">?</span>
+                    <span class="inline-help" tabindex="0" role="img" aria-label="Method explains the pay rule used for this clinician." title="The pay rule used for this clinician, such as session-type rates or percent of clinician collections.">?</span>
                   </span>
                 </th>
                 <th></th>
@@ -232,6 +248,24 @@
       </section>
     </main>
 
+    <div id="warningDrawer" class="drawer-backdrop hidden" aria-hidden="true">
+      <section class="warning-drawer" role="dialog" aria-modal="true" aria-labelledby="warningDrawerTitle">
+        <header class="warning-drawer-header">
+          <div>
+            <p class="eyebrow">Payroll review</p>
+            <h2 id="warningDrawerTitle">Warnings</h2>
+            <p id="warningDrawerSummary" class="muted"></p>
+          </div>
+          <button id="warningDrawerClose" class="ghost-button" type="button">Close</button>
+        </header>
+        <label class="warning-search">
+          <span>Search</span>
+          <input id="warningSearchInput" type="search" placeholder="Clinician, client, date, or amount">
+        </label>
+        <div id="warningDrawerList" class="warning-drawer-list"></div>
+      </section>
+    </div>
+
     <template id="contractTemplate">
       <article class="contract-card">
         <div class="contract-main">
@@ -241,7 +275,6 @@
             <option value="flat_session">Flat rate per kept session</option>
             <option value="per_session">Different rates by session type</option>
             <option value="percent_collections">% of clinician collections</option>
-            <option value="percent_clinic_income">% of total clinic income</option>
           </select>
           <p class="rule-description"></p>
         </div>

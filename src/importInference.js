@@ -34,6 +34,13 @@ const ROLE_SPECS = [
     fileHints: ["insurance_payment", "insurance payment"],
     requiredHeaders: ["Date Received", "Client", "Payer", "Amount", "Payment Reference"],
   },
+  {
+    inputId: "insuranceAllocationFile",
+    payloadKey: "insuranceAllocationCsv",
+    label: "Insurance payer allocation",
+    fileHints: ["insurance payer allocation", "insurance_payer_allocation", "payer allocation"],
+    requiredHeaders: ["Clinician", "Payer", "Amount"],
+  },
 ];
 
 const DEFAULT_CANDIDATE_OPTIONS = {
@@ -47,7 +54,23 @@ const DEFAULT_CANDIDATE_OPTIONS = {
 export function inferImportFiles(files) {
   const assignments = {};
   const unmatched = [];
-  const matches = files.map((file) => ({ file, role: inferFileRole(file) }));
+  const duplicates = [];
+  const fingerprints = new Map();
+  const uniqueFiles = [];
+
+  for (const file of files) {
+    const fingerprint = fingerprintImportFile(file);
+    const duplicateOf = fingerprints.get(fingerprint);
+    if (duplicateOf) {
+      duplicates.push({ file, duplicateOf, fingerprint });
+      unmatched.push(file);
+      continue;
+    }
+    fingerprints.set(fingerprint, file);
+    uniqueFiles.push(file);
+  }
+
+  const matches = uniqueFiles.map((file) => ({ file, role: inferFileRole(file) }));
 
   for (const { file, role } of matches) {
     if (!role) {
@@ -67,8 +90,15 @@ export function inferImportFiles(files) {
   return {
     assignments,
     unmatched,
+    duplicates,
     missing: ROLE_SPECS.filter((role) => !assignments[role.inputId]),
   };
+}
+
+export function fingerprintImportFile(file) {
+  const role = inferFileRole(file)?.inputId || "unknown";
+  const text = normalizeForFingerprint(file?.text || "");
+  return `${role}:${hashText(text)}`;
 }
 
 export function inferFileRole(file) {
@@ -229,6 +259,22 @@ function parseCsvLine(line) {
 
   fields.push(field);
   return fields;
+}
+
+function normalizeForFingerprint(text) {
+  return clean(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+$/gm, "")
+    .trim();
+}
+
+function hashText(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function clean(value) {
