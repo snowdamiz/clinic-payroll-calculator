@@ -1,0 +1,16 @@
+{
+  "name": "clinic-payroll-calculator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "icons": "node scripts/generate-icons.mjs",
+    "validate": "node scripts/validate-extension.mjs",
+    "package": "node scripts/package-extension.mjs",
+    "store": "npm run icons && npm test && npm run validate && npm run package",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@e965/xlsx": "0.20.3"
+  }
+}
