@@ -85,16 +85,37 @@ test("labels contribution PnL, trailing review, and ledger exports in the side p
   assert.match(sidePanelJs, /optionalMetricHtml/);
   assert.match(sidePanelJs, /Unavailable/);
   assert.match(sidePanelJs, /stripePayoutGapAvailable/);
-  assert.match(sidePanelJs, /Needs Stripe gross payment rows from payment export/);
+  assert.match(sidePanelJs, /import Payment Export with Payment type = Stripe rows/);
   assert.match(sidePanelJs, /Stripe payout gap/);
+  assert.match(sidePanelJs, /paymentExportUnavailableNote/);
+  assert.match(sidePanelJs, /Insurance Payer Allocation export/);
+  assert.match(sidePanelJs, /Card Transactions report with Amount, Fee, Net, and Available On columns/);
   assert.match(sidePanelJs, /generateClinicianCsv/);
   assert.match(sidePanelJs, /generateReportCsvExports/);
   assert.match(sidePanelJs, /downloadZipFile/);
   assert.match(sidePanelJs, /createZipBlob/);
+  assert.match(sidePanelJs, /zipFileDataBytes/);
   assert.match(sidePanelJs, /application\/zip/);
   assert.match(sidePanelJs, /sessionDetailExportClinician/);
-  assert.match(sidePanelHtml, /Download Clinician ZIP/);
-  assert.match(sidePanelHtml, /Download Ledger ZIP/);
+  assert.match(sidePanelJs, /exportResultsPdf/);
+  assert.match(sidePanelJs, /exportStatementPacketPdf/);
+  assert.match(sidePanelJs, /PDF-ready report opened/);
+  assert.match(sidePanelJs, /PDF-ready clinician statement packet opened/);
+  assert.match(sidePanelJs, /Payroll Totals/);
+  assert.match(sidePanelJs, /Reconciliation/);
+  assert.match(sidePanelJs, /reportWindow\.print/);
+  assert.match(sidePanelJs, /data-export-action/);
+  assert.match(sidePanelJs, /statement-pdf/);
+  assert.doesNotMatch(sidePanelJs, /pdf-zip/);
+  assert.doesNotMatch(sidePanelJs, /Download PDF ZIP/);
+  assert.doesNotMatch(sidePanelJs, /generateClinicianStatementPdf/);
+  assert.doesNotMatch(sidePanelJs, /generatePayrollReportPdf/);
+  assert.match(sidePanelJs, /Download Clinician ZIP/);
+  assert.match(sidePanelJs, /Download Ledger ZIP/);
+  assert.match(sidePanelJs, /Export PDF/);
+  assert.match(sidePanelJs, /Export Statements PDF/);
+  assert.doesNotMatch(sidePanelHtml, /id="downloadClinicianCsvsButton"/);
+  assert.doesNotMatch(sidePanelHtml, /id="exportPdfButton"/);
 });
 
 test("keeps payroll warnings behind a searchable bottom drawer", async () => {
@@ -109,26 +130,32 @@ test("keeps payroll warnings behind a searchable bottom drawer", async () => {
   assert.match(sidePanelJs, /renderWarningDrawer/);
   assert.match(sidePanelJs, /data-open-warnings/);
   assert.match(sidePanelJs, /warningSearchText/);
+  assert.match(sidePanelJs, /handleWarningDrawerKeydown/);
+  assert.match(sidePanelJs, /data-review-warning/);
+  assert.match(sidePanelHtml, /id="warningSeverityFilter"/);
+  assert.match(sidePanelHtml, /id="warningCategoryFilter"/);
+  assert.match(sidePanelHtml, /id="warningStatusFilter"/);
   assert.doesNotMatch(sidePanelJs, /more warnings hidden/);
   assert.match(css, /\.warning-summary/);
   assert.match(css, /\.warning-drawer/);
+  assert.match(css, /\.warning-filters/);
   assert.match(css, /\.warning-drawer-list\s*{[^}]*overflow:\s*auto/s);
 });
 
-test("adds tooltip help for payroll output columns and row values", async () => {
+test("adds accessible help popovers and payroll row value explanations", async () => {
   const sidePanelHtml = await readFile(new URL("../sidepanel.html", import.meta.url), "utf8");
   const sidePanelJs = await readFile(new URL("../src/sidepanel.js", import.meta.url), "utf8");
   const css = await readFile(new URL("../src/sidepanel.css", import.meta.url), "utf8");
 
-  assert.match(sidePanelHtml, /Pay is the calculated payroll amount owed/);
-  assert.match(sidePanelHtml, /Cash is the money received and attributed/);
-  assert.match(sidePanelHtml, /Sessions are kept appointments counted from CPT codes/);
-  assert.match(sidePanelHtml, /Review counts show trailing collections/);
-  assert.match(sidePanelHtml, /Method explains the pay rule used/);
+  assert.match(sidePanelHtml, /data-help-button/);
+  assert.match(sidePanelHtml, /aria-expanded="false"/);
+  assert.match(sidePanelHtml, /Clinician pay rules decide how each clinician/);
+  assert.match(sidePanelJs, /bindHelpPopovers/);
+  assert.match(sidePanelJs, /closeHelpPopovers/);
   assert.match(sidePanelJs, /Calculated payroll amount owed to/);
   assert.match(sidePanelJs, /source cash before the clinician pay rule is applied/);
-  assert.match(css, /\.inline-help/);
-  assert.match(css, /cursor:\s*help/);
+  assert.match(css, /\.help-popover:not\(\[hidden\]\)/);
+  assert.match(css, /:focus-visible/);
 });
 
 test("statement pages include clickable payment source tabs", async () => {
@@ -183,7 +210,8 @@ test("persists imported data and offers a reset beside calculate", async () => {
   assert.match(sidePanelJs, /payrollWidgetDraft/);
   assert.match(sidePanelJs, /restoreSavedState/);
   assert.match(sidePanelJs, /serializeDraft/);
-  assert.match(sidePanelJs, /Import at least one SimplePractice CSV or Excel file before calculating/);
+  assert.match(sidePanelJs, /Income allocation export is required/);
+  assert.match(sidePanelJs, /buildPreflightReview/);
   assert.match(sidePanelJs, /scrollResultsIntoView/);
   assert.match(sidePanelJs, /storageRemove\(DRAFT_STORAGE_KEY\)/);
   assert.ok(manifest.permissions.includes("unlimitedStorage"));
@@ -198,7 +226,7 @@ test("auto-saves clinician pay rules and reset preserves them", async () => {
   assert.match(sidePanelJs, /async function persistContracts\(\)/);
   assert.match(sidePanelJs, /scheduleContractSave\(\);/);
   assert.match(sidePanelJs, /persistContracts\(\)\.catch\(\(\) => \{\}\)/);
-  assert.match(sidePanelJs, /Reset dates, imported files, and results\? Clinician pay rules stay saved\./);
+  assert.match(sidePanelJs, /Saved clinician pay rules stay stored locally/);
   assert.match(sidePanelJs, /await persistContracts\(\);/);
   assert.match(sidePanelJs, /normalizeContractsMap/);
   assert.doesNotMatch(sidePanelJs, /draft pay-rule edits/);
@@ -211,32 +239,54 @@ test("guides payroll setup with import status", async () => {
   const css = await readFile(new URL("../src/sidepanel.css", import.meta.url), "utf8");
 
   assert.match(sidePanelHtml, /id="readinessBanner"/);
+  assert.match(sidePanelHtml, /id="nextStepDetail"/);
+  assert.match(sidePanelHtml, /id="preflightPanel"/);
+  assert.match(sidePanelHtml, /id="runSummaryPanel"/);
   assert.match(sidePanelHtml, /0\/6/);
   assert.doesNotMatch(sidePanelHtml, /id="workflowSteps"/);
   assert.match(sidePanelHtml, /id="importChecklist"/);
+  assert.match(sidePanelHtml, /id="fileFallbackDetails"/);
   assert.match(sidePanelHtml, /Payments received by clinician/);
   assert.match(sidePanelJs, /renderGuidance/);
   assert.match(sidePanelJs, /guidanceSummary/);
+  assert.match(sidePanelJs, /renderRunSummary/);
+  assert.match(sidePanelJs, /updateSetupSections/);
+  assert.match(sidePanelJs, /renderReviewTab/);
   assert.doesNotMatch(sidePanelJs, /renderWorkflowSteps/);
   assert.match(sidePanelJs, /renderImportChecklist/);
+  assert.match(sidePanelJs, /importReviewRowHtml/);
+  assert.match(sidePanelJs, /Manually reassigned from the import review panel/);
+  assert.match(sidePanelJs, /Skipped files and import notes/);
   assert.match(sidePanelJs, /state\.files = \{\}/);
   assert.match(css, /\.readiness-banner/);
+  assert.match(css, /\.next-step/);
+  assert.match(css, /\.run-summary-panel/);
+  assert.match(css, /\.review-tabs/);
+  assert.match(css, /\.clinician-card/);
   assert.doesNotMatch(css, /\.workflow-step/);
-  assert.match(css, /\.import-check/);
-  assert.match(css, /\.results-panel \.button-row\s*{[^}]*grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(180px, 100%\), 1fr\)\)/s);
-  assert.match(css, /\.section-heading,\s*\.button-row\s*{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(css, /\.import-review-list/);
+  assert.match(css, /\.import-review-row/);
+  assert.match(css, /\.import-evidence/);
+  assert.match(css, /\.file-fallback-details/);
+  assert.match(css, /\.export-action-card:hover/);
   assert.match(css, /\.metric-grid\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
   assert.match(css, /@media \(min-width:\s*1380px\)/);
   assert.match(css, /font-variant-numeric:\s*tabular-nums/);
 });
 
 test("surfaces CPT-derived session counts beside clinician pay rules", async () => {
+  const sidePanelHtml = await readFile(new URL("../sidepanel.html", import.meta.url), "utf8");
   const sidePanelJs = await readFile(new URL("../src/sidepanel.js", import.meta.url), "utf8");
   const css = await readFile(new URL("../src/sidepanel.css", import.meta.url), "utf8");
 
+  assert.match(sidePanelHtml, /class="contract-details"/);
+  assert.match(sidePanelHtml, /class="contract-summary"/);
+  assert.match(sidePanelJs, /details\.open = validation\.state !== "complete"/);
+  assert.match(sidePanelJs, /contractSummaryText/);
   assert.match(sidePanelJs, /Sessions from CPT codes/);
   assert.match(sidePanelJs, /sessionMixHtml/);
   assert.match(sidePanelJs, /Couples\/Family/);
+  assert.match(css, /\.contract-details\[open\] > \.contract-summary::after/);
   assert.match(css, /\.session-mix/);
   assert.match(css, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
 });

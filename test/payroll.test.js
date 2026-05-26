@@ -133,7 +133,10 @@ test("classifies trailing, aged trailing, and missing-service-date payments", ()
   assert.equal(report.trailingPayments.amount, 89.44);
   assert.equal(report.trailingPayments.oldestLagDays, 57);
   assert.equal(report.trailingPayments.missingServiceDateCount, 1);
-  assert.ok(report.warnings.some((warning) => warning.type === "old_service_payment"));
+  const trailingWarning = report.warnings.find((warning) => warning.type === "old_service_payment");
+  assert.ok(trailingWarning);
+  assert.match(trailingWarning.nextAction, /trailing-payment detail/);
+  assert.match(trailingWarning.nextAction, /income allocation appointment date or payment date/);
 });
 
 test("migrates obsolete clinic-income percentage contracts to needs-review with no calculated pay", () => {
@@ -152,6 +155,30 @@ test("migrates obsolete clinic-income percentage contracts to needs-review with 
   assert.equal(report.clinicians["Clinician B"].pay.total, 0);
   assert.equal(report.clinicians["Clinician B"].pay.explanation, "Legacy percent-of-clinic-income rule needs review");
   assert.ok(report.warnings.some((warning) => warning.type === "legacy_pay_rule"));
+});
+
+test("warns when configured pay rules have zero values for active work", () => {
+  const flatReport = buildPayrollReport({
+    incomeCsv,
+    appointmentCsv,
+    contracts: {
+      "Clinician A": { payType: "flat_session", flatRate: 0 },
+    },
+    periodStart: "2026-04-25",
+    periodEnd: "2026-05-24",
+  });
+  const percentReport = buildPayrollReport({
+    incomeCsv,
+    appointmentCsv,
+    contracts: {
+      "Clinician A": { payType: "percent_collections", percentage: 0 },
+    },
+    periodStart: "2026-04-25",
+    periodEnd: "2026-05-24",
+  });
+
+  assert.ok(flatReport.warnings.some((warning) => warning.type === "zero_value_pay_rule"));
+  assert.ok(percentReport.warnings.some((warning) => warning.type === "zero_value_pay_rule"));
 });
 
 test("labels contribution PnL honestly when processing fees are unavailable", () => {

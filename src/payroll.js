@@ -730,6 +730,12 @@ function buildWarnings(clinicians, contracts, period) {
         clinician: clinician.name,
         message: `${clinician.name} needs a pay rule before payroll is final.`,
       });
+    } else if (isZeroValueContract(clinician.contract, clinician)) {
+      warnings.push({
+        type: "zero_value_pay_rule",
+        clinician: clinician.name,
+        message: `${clinician.name} has a configured pay rule that currently calculates zero pay because a required rate or percentage is zero.`,
+      });
     }
 
     if (clinician.sessionCounts.total > 0 && clinician.cashReceived.total === 0) {
@@ -754,12 +760,28 @@ function buildWarnings(clinicians, contracts, period) {
           type: "old_service_payment",
           clinician: clinician.name,
           message: `${clinician.name} received ${formatMoney(payment.amount)} for ${payment.client} ${payment.lagDays} days after service date ${payment.serviceDate}.`,
+          nextAction: `Review ${clinician.name}'s trailing-payment detail for ${payment.client} on service date ${payment.serviceDate}. Keep it if the payment was received in this pay period; otherwise check the income allocation appointment date or payment date.`,
         });
       }
     }
   }
 
   return warnings;
+}
+
+function isZeroValueContract(contract, clinician) {
+  if (contract.payType === "flat_session") return Number(contract.flatRate || 0) <= 0;
+  if (contract.payType === "percent_collections") return Number(contract.percentage || 0) <= 0;
+  if (contract.payType !== "per_session") return false;
+
+  const rates = contract.sessionRates || {};
+  const allRatesZero = Object.values(rates).every((rate) => Number(rate || 0) <= 0);
+  if (allRatesZero) return true;
+
+  return SESSION_TYPES.some((sessionType) => {
+    const count = Number(clinician.sessionCounts?.[sessionType] || 0);
+    return count > 0 && Number(rates[sessionType] || 0) <= 0;
+  });
 }
 
 function centsSummary(cents) {

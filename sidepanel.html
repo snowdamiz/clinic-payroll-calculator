@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="src/sidepanel.css">
   </head>
   <body>
-    <main class="shell">
+    <main id="mainContent" class="shell" tabindex="-1">
       <header class="topbar">
         <div>
           <p class="eyebrow">New Pattern Counseling</p>
@@ -15,6 +15,7 @@
         </div>
         <div class="topbar-actions">
           <p id="calculateStatus" class="action-status" role="status" aria-live="polite"></p>
+          <p id="autosaveStatus" class="autosave-status" role="status" aria-live="polite">Local draft ready.</p>
           <button id="resetButton" class="ghost-button" type="button">Reset</button>
           <button id="calculateButton" class="primary-button" type="button">Calculate</button>
         </div>
@@ -26,6 +27,7 @@
             <p class="eyebrow">Current Run</p>
             <h2 id="readinessTitle">Import SimplePractice exports</h2>
             <p id="readinessDetail" class="muted">0 imports loaded. No clinicians loaded yet.</p>
+            <p id="nextStepDetail" class="next-step">Next: choose the income allocation export.</p>
           </div>
           <div class="readiness-metrics" aria-label="Run summary">
             <div>
@@ -44,7 +46,28 @@
         </div>
       </section>
 
-      <section class="panel period-panel" aria-labelledby="periodHeading">
+      <section id="preflightPanel" class="panel preflight-panel hidden" aria-labelledby="preflightHeading" tabindex="-1">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Preflight</p>
+            <h2 id="preflightHeading">Resolve Before Calculation</h2>
+          </div>
+        </div>
+        <div id="preflightList" class="preflight-list"></div>
+      </section>
+
+      <section id="runSummaryPanel" class="panel run-summary-panel hidden" aria-labelledby="runSummaryHeading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Review Mode</p>
+            <h2 id="runSummaryHeading">Run Summary</h2>
+            <p id="runSummaryDetail" class="muted"></p>
+          </div>
+        </div>
+        <div id="runSummaryGrid" class="run-summary-grid"></div>
+      </section>
+
+      <section id="periodPanel" class="panel period-panel setup-panel" data-setup-section="period" aria-labelledby="periodHeading">
         <div>
           <h2 id="periodHeading">Pay Period</h2>
           <p class="muted">25th through 24th</p>
@@ -59,11 +82,11 @@
         </label>
       </section>
 
-      <section class="panel" aria-labelledby="importsHeading">
+      <section id="importsPanel" class="panel setup-panel" data-setup-section="imports" aria-labelledby="importsHeading">
         <div class="section-heading">
           <div>
             <h2 id="importsHeading">Imports</h2>
-            <p class="muted">Folder import or individual file fallback.</p>
+            <p class="muted">Files are parsed locally in this browser and saved only to the extension draft.</p>
           </div>
           <button id="clearFilesButton" class="ghost-button" type="button">Clear</button>
         </div>
@@ -83,89 +106,92 @@
         </div>
         <p id="folderImportStatus" class="import-status">Drop a folder here, open the folder importer, or choose the export files.</p>
         <div id="importChecklist" class="import-checklist" aria-label="Import checklist"></div>
-        <div class="file-grid">
-          <label class="file-control required" data-file-control="incomeFile">
-            <span class="file-control-title">
-              <span>Income allocation</span>
-              <em>Core</em>
-            </span>
-            <span class="file-hint">Payments received by clinician.</span>
-            <input id="incomeFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-          <label class="file-control" data-file-control="appointmentFile">
-            <span class="file-control-title">
-              <span>Appointment status</span>
-              <em>Sessions</em>
-            </span>
-            <span class="file-hint">Kept sessions and CPT codes.</span>
-            <input id="appointmentFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-          <label class="file-control" data-file-control="cardFile">
-            <span class="file-control-title">
-              <span>Card transactions</span>
-              <em>Optional</em>
-            </span>
-            <span class="file-hint">Stripe fees and deposits.</span>
-            <input id="cardFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-          <label class="file-control" data-file-control="paymentFile">
-            <span class="file-control-title">
-              <span>Payment export</span>
-              <em>Optional</em>
-            </span>
-            <span class="file-hint">Reconciliation totals.</span>
-            <input id="paymentFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-          <label class="file-control" data-file-control="insuranceFile">
-            <span class="file-control-title">
-              <span>Insurance payment report</span>
-              <em>Optional</em>
-            </span>
-            <span class="file-hint">Insurance report cross-check.</span>
-            <input id="insuranceFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-          <label class="file-control" data-file-control="insuranceAllocationFile">
-            <span class="file-control-title">
-              <span>Insurance payer allocation</span>
-              <em>Optional</em>
-            </span>
-            <span class="file-hint">Insurance allocations by payer and clinician.</span>
-            <input id="insuranceAllocationFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-            <span class="file-picker-row">
-              <span class="file-action">Choose file</span>
-              <small class="selected-file-name">Not selected</small>
-            </span>
-          </label>
-        </div>
+        <details id="fileFallbackDetails" class="file-fallback-details">
+          <summary>Individual file fallback</summary>
+          <div class="file-grid">
+            <label class="file-control required" data-file-control="incomeFile">
+              <span class="file-control-title">
+                <span>Income allocation</span>
+                <em>Core</em>
+              </span>
+              <span class="file-hint">Payments received by clinician.</span>
+              <input id="incomeFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+            <label class="file-control" data-file-control="appointmentFile">
+              <span class="file-control-title">
+                <span>Appointment status</span>
+                <em>Sessions</em>
+              </span>
+              <span class="file-hint">Kept sessions and CPT codes.</span>
+              <input id="appointmentFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+            <label class="file-control" data-file-control="cardFile">
+              <span class="file-control-title">
+                <span>Card transactions</span>
+                <em>Optional</em>
+              </span>
+              <span class="file-hint">Stripe fees and deposits.</span>
+              <input id="cardFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+            <label class="file-control" data-file-control="paymentFile">
+              <span class="file-control-title">
+                <span>Payment export</span>
+                <em>Optional</em>
+              </span>
+              <span class="file-hint">Reconciliation totals.</span>
+              <input id="paymentFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+            <label class="file-control" data-file-control="insuranceFile">
+              <span class="file-control-title">
+                <span>Insurance payment report</span>
+                <em>Optional</em>
+              </span>
+              <span class="file-hint">Insurance report cross-check.</span>
+              <input id="insuranceFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+            <label class="file-control" data-file-control="insuranceAllocationFile">
+              <span class="file-control-title">
+                <span>Insurance payer allocation</span>
+                <em>Optional</em>
+              </span>
+              <span class="file-hint">Insurance allocations by payer and clinician.</span>
+              <input id="insuranceAllocationFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+              <span class="file-picker-row">
+                <span class="file-action">Choose file</span>
+                <small class="selected-file-name">Not selected</small>
+              </span>
+            </label>
+          </div>
+        </details>
       </section>
 
-      <section class="panel" aria-labelledby="contractsHeading">
+      <section id="contractsPanel" class="panel setup-panel" data-setup-section="rules" aria-labelledby="contractsHeading">
         <div class="section-heading">
           <div>
             <div class="heading-with-help">
               <h2 id="contractsHeading">Clinician Pay Rules</h2>
-              <button class="help-button" type="button" aria-label="What are clinician pay rules?" aria-describedby="clinicianRulesHelp">?</button>
-              <div id="clinicianRulesHelp" class="help-popover" role="tooltip">
+              <button class="help-button" type="button" aria-label="Open clinician pay rules help" aria-expanded="false" aria-controls="clinicianRulesHelp" data-help-button>Help</button>
+              <div id="clinicianRulesHelp" class="help-popover" role="dialog" aria-label="Clinician pay rules help" hidden>
                 <p>Clinician pay rules decide how each clinician's calculated pay is produced.</p>
                 <dl>
                   <dt>Flat rate per kept session</dt>
@@ -181,6 +207,23 @@
           </div>
           <button id="saveRulesButton" class="ghost-button" type="button">Save Rules</button>
         </div>
+        <div id="bulkRuleActions" class="bulk-rule-actions" aria-label="Bulk pay rule actions">
+          <label class="review-toggle">
+            <input id="rulesReviewOnly" type="checkbox">
+            <span>Needs review only</span>
+          </label>
+          <label>
+            <span>Flat rate</span>
+            <input id="bulkFlatRate" type="number" min="0" step="1" placeholder="80">
+          </label>
+          <button id="applyBulkFlatRateButton" class="ghost-button" type="button">Apply To Selected</button>
+          <label>
+            <span>Copy from</span>
+            <select id="copyRuleSource"></select>
+          </label>
+          <button id="copyRuleButton" class="ghost-button" type="button">Copy To Selected</button>
+          <button id="resetSelectedRulesButton" class="ghost-button danger" type="button">Reset Selected</button>
+        </div>
         <div id="contractsList" class="contracts-list empty-state">
           Load the income allocation and appointment status exports, then choose one pay rule for each clinician.
         </div>
@@ -192,64 +235,39 @@
             <h2 id="resultsHeading">Results</h2>
             <p id="resultPeriod" class="muted"></p>
           </div>
-          <div class="button-row">
-            <button id="printAllButton" class="ghost-button" type="button">Print All</button>
-            <button id="downloadClinicianCsvsButton" class="ghost-button" type="button">Download Clinician ZIP</button>
-            <button id="downloadLedgersButton" class="ghost-button" type="button">Download Ledger ZIP</button>
-            <button id="downloadSummaryButton" class="ghost-button" type="button">Download CSV</button>
-          </div>
         </div>
 
         <div id="incomeCards" class="metric-grid"></div>
-        <div id="reconciliationCards" class="metric-grid compact"></div>
         <div id="warningsList" class="warnings-list"></div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Clinician</th>
-                <th>
-                  <span class="column-heading-with-help">
-                    <span>Pay</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Pay is the calculated payroll amount owed to the clinician after their pay rule is applied." title="Calculated payroll amount owed to the clinician after their pay rule is applied.">?</span>
-                  </span>
-                </th>
-                <th>
-                  <span class="column-heading-with-help">
-                    <span>Cash</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Cash is the money received and attributed to that clinician during the selected pay period." title="Money received and attributed to that clinician during the selected pay period. This is not necessarily the payout amount.">?</span>
-                  </span>
-                </th>
-                <th>
-                  <span class="column-heading-with-help">
-                    <span>Sessions</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Sessions are kept appointments counted from CPT codes, split into individual, couples or family, and group totals." title="Kept appointments counted from CPT codes. Ind = individual, C/F = couples or family, Group = group sessions.">?</span>
-                  </span>
-                </th>
-                <th>
-                  <span class="column-heading-with-help">
-                    <span>Review</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Review counts show trailing collections, split-payment rows, unmatched payments, and open unpaid appointments." title="Trailing collections, split-payment rows, unmatched payments, and open unpaid appointments.">?</span>
-                  </span>
-                </th>
-                <th>
-                  <span class="column-heading-with-help">
-                    <span>Method</span>
-                    <span class="inline-help" tabindex="0" role="img" aria-label="Method explains the pay rule used for this clinician." title="The pay rule used for this clinician, such as session-type rates or percent of clinician collections.">?</span>
-                  </span>
-                </th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="clinicianResults"></tbody>
-          </table>
+        <div class="review-tabs" role="tablist" aria-label="Payroll review sections">
+          <button class="review-tab" type="button" role="tab" aria-selected="true" aria-controls="summaryPanel" data-review-tab="summary">Summary</button>
+          <button class="review-tab" type="button" role="tab" aria-selected="false" aria-controls="warningsPanel" data-review-tab="warnings">Warnings</button>
+          <button class="review-tab" type="button" role="tab" aria-selected="false" aria-controls="cliniciansPanel" data-review-tab="clinicians">Clinicians</button>
+          <button class="review-tab" type="button" role="tab" aria-selected="false" aria-controls="reconciliationPanel" data-review-tab="reconciliation">Reconciliation</button>
+          <button class="review-tab" type="button" role="tab" aria-selected="false" aria-controls="exportsPanel" data-review-tab="exports">Exports</button>
+        </div>
+
+        <div id="summaryPanel" class="review-panel" role="tabpanel">
+          <div id="summaryReview" class="summary-review"></div>
+        </div>
+        <div id="warningsPanel" class="review-panel hidden" role="tabpanel">
+          <div id="warningOverview" class="warning-overview"></div>
+        </div>
+        <div id="cliniciansPanel" class="review-panel hidden" role="tabpanel">
+          <div id="clinicianResults" class="clinician-results"></div>
+        </div>
+        <div id="reconciliationPanel" class="review-panel hidden" role="tabpanel">
+          <div id="reconciliationCards" class="metric-grid compact"></div>
+        </div>
+        <div id="exportsPanel" class="review-panel hidden" role="tabpanel">
+          <div id="exportCenter" class="export-center"></div>
         </div>
       </section>
     </main>
 
     <div id="warningDrawer" class="drawer-backdrop hidden" aria-hidden="true">
-      <section class="warning-drawer" role="dialog" aria-modal="true" aria-labelledby="warningDrawerTitle">
+      <section class="warning-drawer" role="dialog" aria-modal="true" aria-labelledby="warningDrawerTitle" tabindex="-1">
         <header class="warning-drawer-header">
           <div>
             <p class="eyebrow">Payroll review</p>
@@ -258,6 +276,31 @@
           </div>
           <button id="warningDrawerClose" class="ghost-button" type="button">Close</button>
         </header>
+        <div class="warning-filters" aria-label="Warning filters">
+          <label>
+            <span>Severity</span>
+            <select id="warningSeverityFilter">
+              <option value="all">All severities</option>
+              <option value="blocker">Blocker</option>
+              <option value="review">Review</option>
+              <option value="info">Info</option>
+            </select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select id="warningCategoryFilter">
+              <option value="all">All categories</option>
+            </select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="warningStatusFilter">
+              <option value="all">All statuses</option>
+              <option value="unreviewed">Unreviewed</option>
+              <option value="reviewed">Reviewed</option>
+            </select>
+          </label>
+        </div>
         <label class="warning-search">
           <span>Search</span>
           <input id="warningSearchInput" type="search" placeholder="Clinician, client, date, or amount">
@@ -268,17 +311,31 @@
 
     <template id="contractTemplate">
       <article class="contract-card">
-        <div class="contract-main">
-          <h3></h3>
-          <select class="pay-type" aria-label="Pay type">
-            <option value="none">No rule yet</option>
-            <option value="flat_session">Flat rate per kept session</option>
-            <option value="per_session">Different rates by session type</option>
-            <option value="percent_collections">% of clinician collections</option>
-          </select>
-          <p class="rule-description"></p>
+        <div class="contract-card-header">
+          <label class="contract-select-label">
+            <input class="contract-select" type="checkbox">
+            <span>Select</span>
+          </label>
+          <span class="rule-badge"></span>
         </div>
-        <div class="contract-fields"></div>
+        <details class="contract-details">
+          <summary class="contract-summary">
+            <span>
+              <strong class="contract-summary-title"></strong>
+              <small class="contract-summary-note"></small>
+            </span>
+          </summary>
+          <div class="contract-main">
+            <select class="pay-type" aria-label="Pay type">
+              <option value="none">No rule yet</option>
+              <option value="flat_session">Flat rate per kept session</option>
+              <option value="per_session">Different rates by session type</option>
+              <option value="percent_collections">% of clinician collections</option>
+            </select>
+            <p class="rule-description"></p>
+          </div>
+          <div class="contract-fields"></div>
+        </details>
       </article>
     </template>
 
